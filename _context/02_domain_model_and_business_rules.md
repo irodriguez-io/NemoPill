@@ -1,0 +1,106 @@
+# Domain Model And Business Rules
+
+## How To Fill This File
+
+- Use the exact domain language defined in `01_product_vision_and_scope.md`.
+- Capture business truth here before you discuss persistence or framework details.
+- If aggregates are not relevant, write `Not applicable` instead of leaving the section blank.
+
+## Entities
+
+| Entity | Identity | Description | Key Attributes | Lifecycle Notes |
+| --- | --- | --- | --- | --- |
+| `Medication` | `medicationId` (UUID, locally generated) | A specific drug the Patient is prescribed, identified by name, strength, and form. The *what* of a regimen; owns one active Dose Schedule. | `medicationId`, `name`, `strength` (e.g., "10 mg"), `form` (tablet / capsule / liquid / other), `notes` (free-text), `isActive` | Created when the Patient adds a Medication. Soft-archived (not hard-deleted) on discontinuation so historical Doses retain a valid reference. |
+| `Dose Schedule` | `doseScheduleId` (UUID, locally generated) | The rule that generates Doses for a Medication: frequency, time(s) of day, start date, optional end date. The *when* of a regimen. | `doseScheduleId`, `medicationId` (FK), `doseQuantity`, `frequency` (e.g., daily, every-N-hours, specific weekdays), `timesOfDay`, `startDate`, `endDate?`, `isActive` | Created with the Medication. Schedule changes supersede the prior Dose Schedule (new row, old row retained inactive) so past Doses remain interpretable. |
+| `Dose` | `doseId` (UUID, locally generated) | A single, scheduled occurrence of taking a Medication at a specific time — the materialized event the Scheduler fires a Reminder for and the Patient confirms. | `doseId`, `medicationId` (FK), `doseScheduleId` (FK), `scheduledAt` (timestamp), `quantity`, `status` (`pending` / `taken` / `skipped` / `missed`) | Generated from an active Dose Schedule looking forward a bounded window. After `scheduledAt`, the only allowed mutation is Confirmation (or retroactive log — *// review: deferred Open Q2*). Never hard-deleted. |
+| `Confirmation` | `confirmationId` (UUID, locally generated) | The Patient's recorded response that a Dose was *taken* or *skipped*. Adherence is computed only from Confirmations. | `confirmationId`, `doseId` (FK, 1:1), `status` (`taken` / `skipped`), `confirmedAt` (timestamp), `source` (`notification-action` / `in-app` / `retroactive` — *// review: `retroactive` depends on Open Q2*) | Created when the Patient responds to a Reminder or in-app prompt. Mutable in place — a correction overwrites `status`, `confirmedAt`, and `source` on the existing Confirmation. At most one Confirmation row per Dose. |
+
+## Value Objects
+
+| Value Object | Meaning | Fields | Validation Rules |
+| --- | --- | --- | --- |
+| `Strength` | The potency of one unit of a Medication (e.g., "10 mg"). Stored as a value object so two Medications with the same potency compare equal and so the unit is never lost. | `amount` (decimal, > 0), `unit` (enum: `mg`, `mcg`, `g`, `mL`, `IU`, `%`, `other`) | `amount` must be positive and finite. `unit` must be one of the supported enum values. Free-text "other" requires a non-empty `unitLabel`. |
+| `Form` | The physical form of a Medication, used for display and for choosing the right verb in Reminder text ("take", "apply", "inject"). | `value` (enum: `tablet`, `capsule`, `liquid`, `drops`, `patch`, `injection`, `inhaler`, `topical`, `other`) | Must be one of the supported enum values. `other` requires a non-empty free-text label. |
+| `TimeOfDay` | A wall-clock time without a date — used in `Dose Schedule.timesOfDay` to express "8:00 AM, 8:00 PM" independent of any calendar day. | `hour` (0–23), `minute` (0–59) | `hour` ∈ [0,23]; `minute` ∈ [0,59]. Stored in the device's local timezone — *// review: timezone behavior on travel/DST is a candidate Open Q*. |
+| `DateRange` | A start/end window for a Dose Schedule's active lifetime. | `startDate` (LocalDate), `endDate` (LocalDate, nullable for open-ended) | `startDate` ≤ `endDate` when both present. Open-ended (`endDate = null`) means the Dose Schedule continues until manually deactivated. |
+| `Frequency` | The recurrence rule that, combined with `timesOfDay` and `DateRange`, materializes Doses. | `kind` (enum: `daily`, `every-n-hours`, `weekly-on-days`, `every-n-days`), `interval?` (positive int, used by `every-n-hours` and `every-n-days`), `daysOfWeek?` (set of `MON..SUN`, used by `weekly-on-days`) | `interval` required and ≥ 1 when `kind` is `every-n-hours` or `every-n-days`. `daysOfWeek` required and non-empty when `kind` is `weekly-on-days`. Mutually exclusive otherwise. |
+| `DoseQuantity` | How much of the Medication is taken in a single Dose (e.g., "1 tablet", "5 mL"). Bundled with the unit so a quantity is never ambiguous. | `amount` (decimal, > 0), `unit` (enum: `tablet`, `capsule`, `mL`, `drop`, `puff`, `unit`, `other`) | `amount` must be positive and finite. `unit` must be one of the supported enum values. |
+
+## Aggregates And Consistency Boundaries
+
+| Aggregate | Root | What Must Stay Consistent Together | Notes |
+| --- | --- | --- | --- |
+| `Medication aggregate` | `Medication` | A Medication has **exactly one active Dose Schedule** at any time; when the Patient changes the schedule, the prior Dose Schedule is deactivated and the new one is activated **in the same transaction**. An archived Medication implies all its Dose Schedules are inactive. Every Dose Schedule's `medicationId` points to its parent Medication. | Lives in the **Medication Management** Bounded Context. Schedule replacement is the most failure-prone moment — it must succeed atomically or not at all, otherwise the Patient could end up with zero or two active Dose Schedules. |
+| `Dose aggregate` | `Dose` | A Dose has **at most one Confirmation** (1:1, mutable). The Dose's `status` is kept in sync with its Confirmation: `taken` ↔ Confirmation exists with `status = taken`; `skipped` ↔ Confirmation exists with `status = skipped`; `pending` / `missed` ↔ no Confirmation exists. Creating or correcting a Confirmation, and updating the Dose's `status`, happen **in the same transaction**. | Spans **Scheduling & Reminders** (Dose creation, `pending`→`missed` transitions) and **Adherence Tracking** (Confirmation creation/correction). Treated as a single consistency boundary so a Patient's tap on "Taken" never leaves the Dose and Confirmation in disagreement. One application service owns the write path. |
+
+## Business Rules
+
+| Rule ID | Rule | Reason | Enforced In | Failure Behavior |
+| --- | --- | --- | --- | --- |
+| `BR-001` | A Medication has **exactly one active Dose Schedule** at any time. Replacing the Dose Schedule deactivates the prior one and activates the new one in the same transaction. | Two active schedules would generate duplicate or conflicting Doses; zero would leave the Medication un-scheduled. | Domain — Medication aggregate invariant. | Reject the schedule-change command; application surfaces a non-technical error to the Patient. |
+| `BR-002` | A Dose Schedule's `endDate`, when present, must be on or after its `startDate`. | A backwards date range produces no Doses and is almost always input error. | Domain — `DateRange` value-object construction. | Throw at construction; UI shows inline validation at the date input. |
+| `BR-003` | All quantity-bearing value objects (`Strength.amount`, `DoseQuantity.amount`, `Frequency.interval`) must be positive, finite, and non-zero. | Negative or zero quantities are nonsensical for medication. | Domain — value-object construction. | Throw at construction; UI prevents save and shows inline validation. |
+| `BR-004` | A Reminder fires **exactly once** per Dose at its `scheduledAt`, surviving device reboot and app updates, provided the Dose's status is `pending` at the moment of firing. | Duplicate Reminders erode Patient trust; missed Reminders defeat the product's purpose. | Application — Scheduler component (Scheduling & Reminders); integration — Android `AlarmManager` / `WorkManager` re-registration on boot. | Log a Scheduler-fault event; do not fire a second Reminder. *// review: behavior when the device was off / Reminder didn't fire — depends on deferred Open Q1.* |
+| `BR-005` | A Confirmation may only be recorded against an existing Dose, and its `status` must be `taken` or `skipped` (never `pending` or `missed`). | `pending` / `missed` are scheduler-derived states, not Patient choices. | Domain — Dose aggregate invariant + Confirmation construction. | Reject the Confirmation command; surface error to UI. |
+| `BR-006` | Editing or replacing a Dose Schedule **does not retroactively change past Doses**. Already-materialized Doses retain their original `scheduledAt` and `quantity`. | Adherence history must be stable; rewriting it would corrupt the metric and the Patient's trust in the record. | Domain — Dose Schedule replacement logic; application — Dose-generation service. | Past Doses preserved unchanged; new Doses generated only forward of the new schedule's `startDate`. |
+| `BR-007` | Archiving a Medication (`isActive = false`) **generates no new Doses going forward** and **deletes any not-yet-fired (`status = pending` and `scheduledAt > now`) Doses**. Past Doses (`scheduledAt ≤ now`) and their Confirmations are preserved. | Adherence history must remain queryable for archived Medications; future Doses for an archived Medication are pure noise, and deleting them can't affect Adherence (only past Doses count). | Application — Medication-archive service, transactional with Dose deletion. | Reject the archive command if the deletion of future Doses cannot complete in the same transaction. |
+| `BR-008` | Adherence (Reminder-to-Confirmation rate) over a window is defined as: `count(Doses where Confirmation.status = taken AND scheduledAt within window) ÷ count(Doses where scheduledAt within window AND scheduledAt ≤ now)`. `skipped`, `missed`, and `pending` Doses count in the denominator; only `taken` Doses count in the numerator. | The product's primary success metric (≥ 80% over rolling 30 days, per file 01) requires one unambiguous definition. | Domain — Adherence calculation in Adherence Tracking context. | Returns 0% when the denominator is zero (no scheduled Doses yet); never throws. |
+| `BR-009` | Dose generation is bounded: Doses are materialized **at most 3 days** ahead of `scheduledAt`, and **never beyond the Dose Schedule's `endDate`** when one is set. A daily job extends the horizon. | Unbounded generation is wasteful and makes schedule replacement more expensive (more future Doses to delete); a tight 3-day window keeps the work small and recovers fast after device-off periods. | Application — Dose-generation service (Scheduling & Reminders). | Generation service caps at the smaller of (a) `now + 3 days` or (b) `Dose Schedule.endDate`; horizon-extension job runs daily. |
+
+## Invariants
+
+- **FK integrity.** Every persisted `Dose` references exactly one persisted `Medication` and one persisted `Dose Schedule`. Every persisted `Confirmation` references exactly one persisted `Dose`. A `Dose Schedule` references exactly one persisted `Medication`. No row may dangle.
+- **Soft-archive only.** A `Medication` is never hard-deleted while any `Dose Schedule`, `Dose`, or `Confirmation` references it. Archive is `isActive = false`, never row removal.
+- **Single active Dose Schedule per Medication.** For every `Medication`, **at most one** of its `Dose Schedule` rows has `isActive = true`. (A Medication may have zero active schedules if archived.)
+- **Dose status is enum-bounded.** Every `Dose.status` is one of `pending`, `taken`, `skipped`, `missed` — never null, never another value.
+- **Dose ↔ Confirmation mapping is total and bidirectional (Option A).** For every `Dose`:
+  - `status = taken` ↔ exactly one `Confirmation` exists for that `Dose` with `Confirmation.status = taken`.
+  - `status = skipped` ↔ exactly one `Confirmation` exists for that `Dose` with `Confirmation.status = skipped`.
+  - `status = pending` or `status = missed` ↔ **no** `Confirmation` exists for that `Dose`.
+
+  In particular, a `Dose` never has more than one `Confirmation` row.
+- **`scheduledAt` falls inside its Dose Schedule's date range.** For every `Dose`, `Dose.scheduledAt` ≥ parent `Dose Schedule.startDate` and (when set) `Dose.scheduledAt` ≤ parent `Dose Schedule.endDate`. Doses materialized outside the parent's window are invalid state.
+- **All quantity amounts are positive and finite.** Every persisted `Strength.amount`, `DoseQuantity.amount`, and `Frequency.interval` (where applicable) is positive, finite, and non-zero.
+
+## Policies, Decisions, And Calculations
+
+| Policy Or Calculation | Inputs | Output | Deterministic? | Notes |
+| --- | --- | --- | --- | --- |
+| **Dose generation** | An active Dose Schedule (`Frequency`, `timesOfDay`, `DateRange`); current time `now`; horizon `min(now + 3 days, Dose Schedule.endDate)` per BR-009. | The set of new `Dose` instances to materialize, each with `medicationId`, `doseScheduleId`, `scheduledAt`, `quantity = Dose Schedule.doseQuantity`, `status = pending`. | Yes — same inputs always yield the same Dose set. | **Idempotent**: re-running with the same inputs and current persistence state must not produce duplicates. Triggers: on Medication create, on Dose Schedule replacement (forward of new `startDate`), and via a daily horizon-extension job. Doses already materialized are not regenerated. |
+| **Adherence calculation** (Reminder-to-Confirmation rate) | A time window `[from, to]`; all Doses for which `from ≤ scheduledAt ≤ to AND scheduledAt ≤ now`; their `status` values. | A percentage in `[0, 100]` per BR-008: `count(status = taken) ÷ count(all in window) × 100`. | Yes. | Returns `0` when the denominator is zero (no Doses scheduled yet in the window). Computed on demand per query — no precomputed rollups in MVP. Numerator: `taken` only. Denominator: `taken + skipped + missed + pending` for Doses past their `scheduledAt`. |
+| **`Dose.status: pending → missed` transition** | A Dose with `status = pending`; current time `now`; grace period `G`. | New status: `missed` if `now ≥ Dose.scheduledAt + G`; otherwise `status` unchanged. | Yes. | *// review:* Grace period `G` not yet finalized — depends on deferred **Open Q1** (Reminder-misfire behavior). Working assumption to refine later: `G = 1 hour` if the Reminder fired and went unanswered; possibly longer when the device was off. Evaluation cadence (per-Dose timer vs. periodic sweep) also deferred. |
+
+## State Transitions
+
+| Object | From State | Trigger | To State | Guard Conditions |
+| --- | --- | --- | --- | --- |
+| `Dose` | `pending` | Patient records a Confirmation with `status = taken`. | `taken` | Dose exists; no existing Confirmation; Confirmation status is `taken`. (BR-005; Dose aggregate invariant.) |
+| `Dose` | `pending` | Patient records a Confirmation with `status = skipped`. | `skipped` | Dose exists; no existing Confirmation; Confirmation status is `skipped`. |
+| `Dose` | `pending` | Time elapsed: `now ≥ Dose.scheduledAt + G` (per the `pending → missed` policy). | `missed` | Status is still `pending`; no Confirmation exists. *// review: grace period `G` depends on deferred Open Q1.* |
+| `Dose` | `missed` | Patient records a retroactive Confirmation. | `taken` or `skipped` | *// review: depends on deferred Open Q2 — whether retroactive logging is allowed and the time window.* |
+| `Dose` | `taken` | Patient corrects the Confirmation in place to `status = skipped` (Option A mutation). | `skipped` | Confirmation row exists for the Dose; new status ∈ {`taken`, `skipped`} per BR-005. |
+| `Dose` | `skipped` | Patient corrects the Confirmation in place to `status = taken`. | `taken` | Same guard as above. |
+| `Medication` | `active` (`isActive = true`) | Patient archives the Medication. | `archived` (`isActive = false`) | All future-pending Doses for this Medication can be deleted in the same transaction (BR-007). |
+| `Dose Schedule` | `active` (`isActive = true`) | Schedule replacement: Patient edits the Dose Schedule. | `inactive` | A new Dose Schedule is being activated in the same transaction (BR-001 atomicity). |
+| `Dose Schedule` | `active` | Parent Medication is archived. | `inactive` | All Dose Schedules of an archived Medication are deactivated (BR-007 + Invariant 3). |
+| `Confirmation` | (no row exists for the Dose) | Patient taps "Taken" / "Skipped" on a Reminder or in-app Dose card. | row exists with `status`, `confirmedAt`, `source` | Parent Dose exists and has `status = pending` (or `missed`, pending Open Q2); new Confirmation `status` ∈ {`taken`, `skipped`} per BR-005. |
+| `Confirmation` | row exists | Patient corrects the Confirmation. | row exists with updated `status` / `confirmedAt` | Mutates in place per Option A; new `status` ∈ {`taken`, `skipped`}. |
+
+> **Excluded by design (MVP):** Re-activation of an archived Medication is **not** an allowed transition. To resume a discontinued Medication, the Patient creates a new Medication entry. (Option Y from the design discussion.)
+
+## Domain Events
+
+| Event | Trigger | Payload Summary | Consumers | Idempotency Notes |
+| --- | --- | --- | --- | --- |
+| `MedicationCreated` | Patient adds a Medication and its initial Dose Schedule. | `medicationId`, `name`, `strength`, `form`, `doseScheduleId`, `createdAt`. | **Scheduling & Reminders** — kicks off Dose generation for the new Schedule. | Keyed on `medicationId`. Replay is a no-op once the row exists. |
+| `DoseScheduleReplaced` | Patient edits a Medication's Dose Schedule (BR-001 / BR-006); the prior Schedule is deactivated and a new one activated atomically. | `medicationId`, `oldDoseScheduleId`, `newDoseScheduleId`, `replacedAt`. | **Scheduling & Reminders** — delete future-pending Doses tied to the old Schedule, generate Doses from the new Schedule forward of its `startDate`. | Keyed on `newDoseScheduleId`. Replay is a no-op once the new Schedule is the active one. |
+| `MedicationArchived` | Patient archives a Medication (BR-007). | `medicationId`, `archivedAt`. | **Scheduling & Reminders** — delete future-pending Doses; **Adherence Tracking** — historical Doses remain queryable. | Keyed on `medicationId`. Replay is a no-op once `isActive = false`. |
+| `DoseMaterialized` | Dose-generation policy creates a new `Dose` row (per BR-009 horizon). | `doseId`, `medicationId`, `doseScheduleId`, `scheduledAt`, `quantity`. | **Scheduler component** — registers the OS alarm / WorkManager job for the Reminder. | Keyed on `(medicationId, scheduledAt)` so re-runs of the generator can't duplicate the Dose. |
+| `ReminderFired` | OS alarm / `WorkManager` fires at `Dose.scheduledAt` and Dose status is `pending`. | `doseId`, `scheduledAt`, `firedAt`. | Notification UI (presents Reminder); telemetry/log. | Keyed on `doseId`. BR-004 guarantees exactly-once per Dose; consumer dedupes by `doseId`. |
+| `DoseConfirmed` | Patient records a Confirmation, or corrects an existing one (BR-005, Option A in-place mutation). | `doseId`, `confirmationId`, `status` (`taken` / `skipped`), `confirmedAt`, `source`. | **Adherence Tracking** — refresh any cached UI state (Adherence is recomputed on demand in MVP, so no rollup update needed). | Keyed on `confirmationId`. Corrections re-emit with the same `confirmationId` and updated payload — replay safely overwrites. |
+| `DoseMissed` | `pending → missed` transition fires (`now ≥ scheduledAt + G`). *// review: G depends on deferred Open Q1.* | `doseId`, `scheduledAt`, `transitionedAt`. | **Adherence Tracking** — informs the denominator of "Doses past `scheduledAt`"; UI badges/streaks. | Keyed on `doseId`. Transition only happens once per Dose; replay is a no-op once `status = missed`. |
+
+## Glossary Alignment Checks
+
+- Terms that must exactly match `01_product_vision_and_scope.md`: `Patient`, `Medication`, `Dose`, `Dose Schedule`, `Reminder`, `Confirmation`, `Adherence`, `Scheduler`. These are the canonical Ubiquitous Language terms — file 02 has used each of them exactly as defined in file 01, and any later file (03, 04, 06, 11) must do the same. **Avoid:** "drug" / "pill" / "med" / "Rx" (use `Medication`); "regimen" / "plan" / "prescription" (use `Dose Schedule`); "alert" / "alarm" / "notification" (use `Reminder`); "compliance" (use `Adherence`); "acknowledgement" / "check-in" (use `Confirmation`).
+- Terms that must appear in user stories in `03_user_experience_and_use_cases.md`: `Medication`, `Dose`, `Dose Schedule`, `Reminder`, `Confirmation`, `Adherence`. Acceptance criteria for any user story or BDD scenario must use these exact terms. (`Scheduler` is a system actor, not a UX-facing term — it may appear in scenario *infrastructure* steps but should not appear in user-visible text. `Patient` is the implicit subject of every user story; named when role differentiation is needed.)
