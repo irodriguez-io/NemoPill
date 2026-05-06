@@ -120,6 +120,29 @@ Repo-scoped skills under `.claude/skills/` are accelerators, not required contex
 
 If a skill exists for the current task type, prefer it over ad-hoc workflow.
 
+## Contextualization Sessions: One File Per Conversation
+
+This rule overrides any contrary default in the `start-working` skill.
+
+`/start-working` is intended to be invoked **once per framework file**. Do not attempt to contextualize multiple framework files in a single conversation — context length and attention quality degrade across long interviews, and the framework is explicitly designed for resumption across sessions via `_context/handoff_log.md`.
+
+At the start of every `/start-working` session, before doing anything else:
+
+1. List the contents of `_context/`.
+2. For each file already present in `_context/`, treat it as **DONE** — do not re-interview the user about it.
+3. Run `bash _framework/validate_framework.sh` from the repository root. The validator output identifies which files still contain unresolved `{{REQUIRED:}}`, `{{OPTIONAL:}}`, or `{{EXAMPLE:}}` markers.
+4. The "next file to work on" is the lowest-numbered framework file that is either (a) not yet present in `_context/`, or (b) present but contains unresolved placeholders.
+5. Read `_context/handoff_log.md` if it exists, to learn what prior sessions decided. **Do not re-litigate those decisions** — they are settled.
+6. Read every file already present in `_context/` (in order 01 through whichever is the latest) so you carry the established Ubiquitous Language, Bounded Contexts, and prior decisions forward into the new file.
+7. Announce to the user which file you intend to work on and a one- or two-line summary of what is already done. Confirm before beginning the interview.
+
+When the file is complete:
+
+- Write it to `_context/<file>`.
+- Append a structured handoff entry to `_context/handoff_log.md`.
+- Tell the user the session is complete and ask them to **start a new conversation with `/start-working`** for the next file.
+- **Do not proceed to the next file in the same conversation**, even if the user requests it. Politely decline and explain that the per-file split is intentional for context-quality reasons. If the user explicitly insists in writing after that warning, you may continue, but warn that quality may degrade.
+
 ## Suggested Handoff Prompt
 
 ```text
