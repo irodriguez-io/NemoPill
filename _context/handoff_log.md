@@ -70,3 +70,30 @@ Structured record of role turns. Newest entries appended at the bottom.
   - `Dose.scheduledAt` storage in code is now nailed (UTC `Instant`), but the persistence-layer mapping (Room/SQLite type for `Instant` and IANA TZ ID) is an implementation choice for file 04 (Solution Architecture).
   - The Patient-facing copy for the late-Reminder text and the silent missed notification ("Late: Take your 8 AM Lisinopril", etc.) is illustrative; final wording belongs in file 11 (Visual Language and Design System).
 - **Next role:** Architect — invoke `/start-working` in a new conversation to contextualize `_context/03_user_experience_and_use_cases.md`. Per CLAUDE.md's per-file session protocol, this conversation stops here.
+
+## 2026-05-08T21:36:25Z — Architect — start-working
+
+- **Outcome:** `_context/03_user_experience_and_use_cases.md` written and verified (zero unresolved placeholders in file 03).
+- **Files written:** `_context/03_user_experience_and_use_cases.md`.
+- **Optional files included this turn:** none (file 03 stands alone; the 5 optional sections in the template that touch design system, content, etc., were either filled or explicitly deferred to file 11).
+- **Validator result:** Pass for files 01, 02, and 03 (no `{{REQUIRED}}` / `{{OPTIONAL}}` / `{{EXAMPLE}}` markers remain in any of them, no `// review` markers in file 03). Overall framework still incomplete — files 04–09 remain missing, as expected by the per-file session protocol.
+- **Volume note:** the framework template's 48-placeholder skeleton was deliberately expanded during the interview (with the user's approval at each section) to **218 resolved placeholders** in the final file: 7 Key Journey rows (vs. template's 2), 9 Use Case rows (vs. 2), 21 BDD scenarios (vs. 1), 8 Acceptance Criteria (vs. 3), and 7 Edge Cases (vs. 2). Personas table row 2 captured as `Not applicable` per single-actor scope.
+- **Decisions made worth carrying forward into later files:**
+  - **Experience channels** locked at exactly two: (1) Android app UI and (2) Android system notifications (lock-screen + notification-shade Reminders with inline action buttons). No Wear OS, widget, email, SMS, or voice.
+  - **Primary user journey** framed broadly as the **first-week onboarding loop** (add Medication → Schedule → Doses materialize → Reminders fire → Confirmations recorded → Adherence visible). This becomes the QA-testable contract for "the product works."
+  - **UX success signal** is dual-framed: behavioral (Patient stops having to remember) AND emotional (Patient feels confident, no anxiety about missed Doses or doubling up).
+  - **Single human persona: `Patient`**, designed as **novice** smartphone fluency. Five environment constraints to honor everywhere: offline-first, screen-reader (TalkBack) compatible, low-light / glanceable, one-handed friendly, battery / Doze-tolerant.
+  - **Responsiveness scope expanded to fully responsive across phone, tablet, and foldables** — explicitly per user override of the initial proposal. This widens the layout / breakpoint surface area for the Developer role and should be reflected in `_context/04` UI architecture and `_context/11` design tokens.
+  - **Seven Key Journeys (`J-001` through `J-007`)**: J-001 = primary onboarding, J-002 = steady-state daily loop, J-003 = Schedule replacement (BR-001 / BR-006), J-004 = Archive Medication (BR-007), J-005 = retroactive Confirmation (BR-011), J-006 = late-Reminder / device-off recovery (BR-010), J-007 = timezone change (BR-012). Each Journey traces explicitly to one or more of the file-02 Business Rules.
+  - **Nine Use Cases (`UC-001` through `UC-009`)**: UC-004 (Confirm Dose from Reminder) and UC-005 (Confirm Dose in-app) are kept distinct so file 04 can model the two `Confirmation.source` paths separately even though both produce the same Dose state. UC-007 (Correct existing Confirmation) is the in-place mutation path per Option A.
+  - **21 BDD scenarios** are the testable backbone — each maps to a Business Rule, an aggregate invariant, or an Adherence calculation. These are the QA contract.
+  - **8 Acceptance Criteria** (AC-001 through AC-008) summarize the "Patient gets the product they were promised" view. AC-002 is the one most likely to be hard to verify under real OS conditions (Doze, battery saver) and should be flagged for early prototype validation.
+  - **7 Edge Cases** preserved in the test suite, including manual clock changes (EC-003), DST fall-back (EC-005), and concurrent Confirmation taps (EC-006). EC-006 is the strongest argument for using a transactional write path for Dose ↔ Confirmation in file 04.
+- **Open questions / review markers left in file 03:** none (zero `// review` markers).
+- **Items deferred to later files (do not re-litigate):**
+  - **`minSdk` choice** for Android — referenced in UX Constraints as "to be set in file 12 / `_build/`."
+  - **Visual language tokens** (color palette, typography, spacing, component library) — explicitly deferred to file 11.
+  - **Persistence-layer mapping** for `Instant` and IANA TZ ID (Room / SQLite types) — flagged in the prior handoff turn; lives in file 04.
+  - **Concrete Reminder copy strings** (full localized wording) — lives in file 11.
+- **ADR candidates surfaced in this turn (to backfill into `_context/09_decision_log.md` when contextualized):** none new beyond the three already identified in the 2026-05-06 open-question resolution turn (Late-Reminder Window, Retroactive Window, Timezone-Anchored Schedules). File 03 reused those three rules; it did not introduce additional durable architecture decisions.
+- **Next role:** Architect — invoke `/start-working` in a new conversation to contextualize `_context/04_solution_architecture.md`. Per CLAUDE.md's per-file session protocol, this conversation stops here.
