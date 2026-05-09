@@ -97,7 +97,7 @@ After approved Apply Mode work, structure the response with:
 
 Each role reads from `_context/`, performs a bounded turn, and writes a structured handoff entry to `_context/handoff_log.md` before yielding. The full contract lives in `_context/14_agent_roles_and_handoffs.md`. Summary:
 
-- **Architect**: runs `/start-working`, owns the `_framework/` → `_context/` translation, may propose ADRs, may not write to `_source/`.
+- **Architect**: runs `/start-working`, owns the `_framework/` → `_context/` translation (interviewing and drafting **one section at a time**, not one placeholder at a time — see "Section-By-Section Drafting" below), may propose ADRs, may not write to `_source/`.
 - **Project Manager**: refreshes `_context/08_active_task_packet.md` and slices `_context/07` milestones into tasks. May not advance `Task status` to `Approved for apply`.
 - **Developer**: implements approved tasks in `_source/`, runs tests, updates `_context/` if documented truth changed. Tests first, smallest defensible change second.
 - **QA**: validates against `_context/03` BDD scenarios, `_context/05` test portfolio, and `_context/10` NFR verifications. Can block Apply Mode if coverage is insufficient.
@@ -114,7 +114,7 @@ Per `_context/05_engineering_quality_security_and_compliance.md`:
 
 Repo-scoped skills under `.claude/skills/` are accelerators, not required context. Recommended skills for this framework:
 
-- `start-working`: interviews the user, contextualizes `_framework/` files into `_context/` one placeholder at a time.
+- `start-working`: interviews the user and contextualizes `_framework/` files into `_context/` **one section at a time** (see "Section-By-Section Drafting" override below) — not one placeholder at a time, despite what the skill's own SKILL.md may say.
 - `framework-readiness-check`: runs and interprets `_framework/validate_framework.sh`.
 - `proposal-review`: reviews a proposed implementation against the active task packet and `_context/`.
 
@@ -142,6 +142,29 @@ When the file is complete:
 - Append a structured handoff entry to `_context/handoff_log.md`.
 - Tell the user the session is complete and ask them to **start a new conversation with `/start-working`** for the next file.
 - **Do not proceed to the next file in the same conversation**, even if the user requests it. Politely decline and explain that the per-file split is intentional for context-quality reasons. If the user explicitly insists in writing after that warning, you may continue, but warn that quality may degrade.
+
+## Section-By-Section Drafting
+
+This rule overrides the placeholder-by-placeholder procedure described in the `start-working` skill's `SKILL.md` (specifically the "Step 2 — Interview, one placeholder at a time" loop). When the two disagree, this section wins.
+
+Within a single framework file, work **one `##` section at a time** rather than one `{{REQUIRED:}}` / `{{OPTIONAL:}}` / `{{EXAMPLE:}}` placeholder at a time. Treat each `##` heading in the framework file as the unit of work. Tables, bullet lists, and prose under that heading are part of the same section and are drafted together — never row-by-row across separate prompts.
+
+For each section in the file, in the order it appears:
+
+1. **Announce the section.** Quote the section heading and a brief summary of what it captures, plus the placeholders inside it (so the user can see the scope of what you're about to ask about).
+2. **Ask the relevant questions first — as a batch.** A single message may contain several focused questions, but they must all be needed to draft *this* section. Do not ask questions that belong to a later section. If a question only makes sense after another is answered, split into a follow-up turn rather than guessing.
+3. **Honor the placeholder rules at the section level:**
+    - `{{REQUIRED:}}` placeholders must be backed by a concrete answer from the user. Do not accept "skip" or "TBD". If the user is uncertain, propose a reasonable default rooted in earlier `_context/` and mark it inline with `// review`.
+    - `{{OPTIONAL:}}` placeholders may resolve to concrete content **or** the literal phrase `Not applicable` (with a one-sentence reason if it would help future readers).
+    - `{{EXAMPLE:}}` placeholders must be either replaced with real content or removed entirely. Never leave example text in `_context/`.
+    - Use the Ubiquitous Language already established in earlier `_context/` files. Do not introduce synonyms.
+4. **Propose a complete draft of the section as a unit.** Once the user has answered, render the entire section — heading, prose, tables, bullets — fully resolved with zero placeholder markers, ready to drop into `_context/<file>`. Show it to the user before moving on.
+5. **Iterate on the proposed draft, not the interview.** If the user wants changes, edit the proposed section directly. Re-open the interview only if the user signals a fundamental rethink of that section's scope.
+6. **Lock the section and move on.** Once the user accepts the section draft, move to the next `##` section. Do not write `_context/<file>` until every section has been accepted.
+
+When all sections are accepted, assemble them in original order, write the file to `_context/<file>`, and follow the existing rules: zero unresolved placeholders, validator must pass, append a handoff entry to `_context/handoff_log.md`, and end the session per the "One File Per Conversation" rule above.
+
+**Why this exists:** drafting whole sections gives the user a coherent artifact to react to and avoids the brittleness of negotiating each placeholder in isolation, which loses context across rows in tables and across related bullets. It also produces fewer turns and a more reviewable transcript.
 
 ## Suggested Handoff Prompt
 
