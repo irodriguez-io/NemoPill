@@ -14,7 +14,7 @@
 | Task ID | `T-001` |
 | Task title | Contextualize `_context/12_environments_and_devops.md` (build, CI, DevOps, and quality-gate decisions gating M-001) |
 | Requested by | Isidro Rodriguez (Human gatekeeper); satisfies `_context/07` M-000 Done When item (1) and resolves the `_context/07` Dependency And Blocker Register row for `_context/12` ("highest-priority design-tail item because it gates the foundation milestone") |
-| Task status | `Ready for proposal` |
+| Task status | `Approved for apply` |
 | Date last updated | `2026-05-17` |
 
 - `Approved for apply` is the only task status that authorizes Apply Mode after explicit human approval.
