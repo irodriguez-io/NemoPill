@@ -14,7 +14,7 @@
 | Task ID | `T-002` |
 | Task title | Contextualize `_context/11_visual_language_and_design_system.md` (Compose token system, BR-010 notification copy, hard-delete confirmation dialog + deliberate-confirmation pattern, English Privacy Policy authoring, Settings UX surfaces blocking M-003 / M-004 / M-006) |
 | Requested by | Isidro Rodriguez (Human gatekeeper); satisfies `_context/07` M-000 Done When item (2) and resolves the `_context/07` Dependency And Blocker Register row for `_context/11` ("blocks Compose token system needed from M-003 onward; blocks BR-010 notification copy needed for M-004; blocks hard-delete confirmation dialog copy and deliberate-confirmation interaction pattern needed for M-006 / F-014; blocks bilingual Privacy Policy authoring needed for M-006 close") |
-| Task status | `Ready for proposal` |
+| Task status | `Approved for apply` |
 | Date last updated | `2026-05-17` |
 
 - `Approved for apply` is the only task status that authorizes Apply Mode after explicit human approval. The Project Manager role cannot advance `Task status` to `Approved for apply` per CLAUDE.md; only the Human gatekeeper may flip it.
