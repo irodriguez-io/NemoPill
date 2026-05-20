@@ -20,6 +20,87 @@
 
 ## Current State
 
+### ADR-067: On-device-only logging contract — Log.e/Log.w for Result.Err.Unexpected only + Play Console Android Vitals as the sole remote evidence stream
+
+- Date: 2026-05-20
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect; Security
+- Related milestone or task: M-000 / T-004; `_context/10_non_functional_requirements.md § Observability And Operability`; T-004 handoff entry
+
+#### Context
+
+`_context/05 § Observability Expectations` already committed to a minimal logging policy (Log.e for `Result.Err.Unexpected` only; no analytics SDK in MVP) and `_context/12 § Monitoring And On-Call` already committed to Google Play Console Android Vitals as the crash-reporting surface (with Konsist redaction rules forbidding Patient data in `throw` statements and Domain `data class` `toString()`). These commitments were captured in two different files at two different milestones; the file-10 NFR register restates them but the cumulative guarantee — "the only evidence streams NemoPill produces are on-device logcat (volatile, OS-managed retention) and Google Play Console Android Vitals (anonymized, Google-managed retention)" — has not been recorded as a single durable decision that future product surfaces (e.g., a hypothetical caregiver-share feature or post-MVP server-side adherence aggregation) must explicitly supersede.
+
+#### Decision
+
+NemoPill commits to **on-device-only logging plus Google Play Console Android Vitals as the sole remote evidence stream** as a single durable architectural property. Concretely: (a) `Log.e` / `Log.w` for the `Result.Err.Unexpected` branch only — never for expected business-rule failures, which are surfaced as Patient-facing UX copy via `Result.Err`; (b) tag convention `NemoPill.<module>.<class>`; (c) every log line is Patient-data-free per the file-12 Konsist redaction rules (no string-template `throw` messages; redacted `toString()` on every Domain `data class`); (d) Google Play Services collects and transmits stack-trace-plus-device-metadata Android Vitals payloads with no app-private state per the redaction rules; (e) Patients can opt out at the OS level via Google Play Services → Usage & diagnostics; (f) no third-party crash reporter (Crashlytics, Sentry, Bugsnag, Rollbar), no on-device crash log file, no analytics SDK, no remote logging vendor.
+
+#### Alternatives Considered
+
+- **Third-party crash reporter (Firebase Crashlytics or equivalent)** — rejected because every such reporter requires `android.permission.INTERNET`, contradicting `_context/05 § Data protection` sub-rule (b) and the Konsist `arch-conformance` no-network-imports rule. The cost of adding a vendor + revising the privacy posture exceeds the marginal benefit over Play Console Android Vitals for a Reminder-and-Confirmation app whose crash surface is small.
+- **On-device crash log file with Patient-driven export** — considered and deferred per `_context/12 § Monitoring And On-Call`'s "Revisit condition" bullet. Adds an export affordance that contradicts `_context/05 § Data protection`'s no-export rule. Re-evaluated if Android Vitals turns out to miss a meaningful class of failures.
+- **Verbose logging across all use cases** — rejected because (i) it inflates logcat noise and reduces signal-to-noise during debugging, (ii) it creates risk of accidentally including Patient data in log lines, (iii) Domain events are already observable via `_context/04 § DomainEventPublisher` for debug-time introspection without standing log emission.
+
+#### Consequences
+
+- Positive: single, defensible evidence-stream contract that future product surfaces must explicitly supersede via a fresh ADR; aligned with the no-`INTERNET` posture; minimal logcat noise; minimal cross-border data flow (only the Google-mediated Android Vitals path); zero project-paid observability cost.
+- Negative: limited debugging information for genuinely surprising production failures; reliance on Google's continued operation of Play Console Android Vitals and its retention policy; no observability for devices without Google Play Services (Huawei devices in some markets, custom Android variants); no on-device crash log the Patient can share via support channels (which is intentional — `_context/12 § Monitoring And On-Call § On-call expectations` confirms no Patient-facing support channel in MVP).
+- Follow-up: if a future product surface (caregiver feature, server-side feature, post-MVP analytics) requires a different evidence-stream model, the change requires a fresh ADR superseding this one *and* superseding `_context/05 § Data protection` sub-rule (b) and `_context/05 § Observability Expectations`.
+
+### ADR-066: App cold-start NFR target — p95 ≤ 2 seconds on minSdk = 26-class hardware
+
+- Date: 2026-05-20
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect
+- Related milestone or task: M-000 / T-004; `_context/10_non_functional_requirements.md § Performance Targets`; T-004 handoff entry
+
+#### Context
+
+The Patient opens NemoPill primarily during or after a Reminder to confirm a Dose. A slow cold-start delays the Confirmation interaction and erodes trust in the on-time experience that the entire architecture (file-04 `AlarmManager.setAlarmClock` choice, file-06 BR-010 1-hour late window, file-10 ±60-second firing latency) is calibrated to deliver. Prior `_context/` files did not pin a numeric cold-start target; the closest references are `_context/03 § UX Constraints And Rules § Responsiveness or device constraints` ("the lock-screen Reminder must be glanceable in under 2 seconds") and Google's Android Vitals threshold for "slow cold-start" (≥ 5 seconds). Without a project-locked numeric target, future milestones cannot evaluate whether a Compose-screen addition or a DI-graph change has regressed cold-start performance.
+
+#### Decision
+
+NemoPill commits to **app cold-start to today's Dose list visible at p95 ≤ 2 seconds on minSdk = 26-class hardware**, measured via `Activity.reportFullyDrawn()` and the Google Play Console Android Vitals "Startup time" panel post-launch. The 2-second target is comfortably inside Google's "good" band (< 5 seconds is "slow") and matches the file-03 "glanceable in under 2 seconds" framing that already applies to the lock-screen Reminder presentation. Validated at M-006 close per `_context/07 § M-006 Done When` item (6) and re-validated after each milestone whose scope adds Compose screens (M-003, M-005, M-006).
+
+#### Alternatives Considered
+
+- **Looser target (p95 ≤ 5 seconds)** — rejected because it sits at Google's Android Vitals "slow" threshold; landing the project floor at the Google-flagged "your app is slow" line gives no headroom for milestone additions.
+- **Tighter target (p95 ≤ 1 second)** — rejected because Kotlin + Compose + Hilt + Room cold-start on minSdk = 26-class hardware regularly lands in the 1–2 second band at typical DI-graph sizes; pinning the target below the band would force premature optimization that competes with file-05 § TDD-workflow's tests-first discipline.
+- **No numeric target (qualitative "the app should feel fast")** — rejected because the file-10 NFR register explicitly forbids adjective-only targets per `_context/10 § Performance Targets`'s framework-template guidance ("Prefer numeric, observable targets over adjectives").
+
+#### Consequences
+
+- Positive: explicit threshold the M-006 walkthrough and post-launch Android Vitals monitoring can evaluate against; gives a fail-fast signal if a future DI / Compose / Room change regresses cold-start; consistent with file-03's "glanceable" framing.
+- Negative: target may need re-validation if Android 16 / minSdk uplift changes the device-class baseline; minSdk = 26 hardware is at the older end of Google's "currently-supported Android" range and the target is intentionally generous for that hardware (newer devices will be faster).
+- Follow-up: M-001 foundation milestone wires the `Activity.reportFullyDrawn()` instrumentation so milestone-close walkthroughs have a measurement surface. If post-launch Android Vitals shows p95 trending above 2 seconds, this ADR is revisited rather than the threshold silently relaxed.
+
+### ADR-065: Reminder firing latency NFR target — ±60 seconds p95 vs. Dose.scheduledAt, bounded by AlarmManager.setAlarmClock semantics
+
+- Date: 2026-05-20
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect
+- Related milestone or task: M-000 / T-004; `_context/10_non_functional_requirements.md § Performance Targets`; T-004 handoff entry
+
+#### Context
+
+`_context/04 § Technology And Runtime Decisions § Exact-time scheduling` chose `AlarmManager.setAlarmClock` over `WorkManager` periodic / expedited work precisely because sub-minute precision is required ("`WorkManager`'s expedited / periodic work is too imprecise for a 09:00:00 Dose"). `_context/06 § BR-010` and `_context/01 § Resolved Product Decisions Q1` pinned the 1-hour late-Reminder window as the deadline by which `pending` Doses must transition to `missed`. Between the sub-minute precision floor of `setAlarmClock` and the 1-hour BR-010 deadline lies an unpinned envelope: how close to `Dose.scheduledAt` must the Reminder fire on the happy path? Without a project-locked threshold, the M-002 and M-004 manual Doze tests have no numeric pass/fail criterion; the file-03 AC-002 ("within a tolerance acceptable for typical morning, midday, and evening Dose times") is suggestive but not testable.
+
+#### Decision
+
+NemoPill commits to **Reminder firing latency ±60 seconds of `Dose.scheduledAt`, p95, when the device is awake or in Doze and the alarm was previously registered via `AlarmManager.setAlarmClock`**. The threshold matches `AlarmManager.setAlarmClock`'s documented OS-imposed best-effort exactness — the API contract that file-04 chose. Measured at the `Instant` at which `notifications::ReminderFiredListener` observes the `ReminderFired` domain event; validated under Robolectric integration tests for the deterministic path and on real hardware in the M-002 walking-skeleton + M-004 manual Doze test per `_context/07 § M-002` / `§ M-004`. Late firings beyond +60 seconds but within +1 hour are governed by `_context/06 § BR-010`'s late-Reminder window, not by this threshold.
+
+#### Alternatives Considered
+
+- **Tighter target (±30 seconds p95)** — rejected because it overpromises against `setAlarmClock`'s documented typical drift under Doze. The M-004 hardware Doze test would likely fail this threshold unless the OS happens to deliver alarms faster than its own contract, which is not a reliable basis for an NFR.
+- **Looser target (±120 seconds p95)** — rejected because closely-spaced TimesOfDay (e.g., an 08:00 Dose and an 08:05 Dose for two different Medications per `_context/03 § EC-002`) could fire 2 minutes apart and the Patient would perceive the misalignment.
+- **No latency target, only the BR-010 1-hour late-window deadline** — rejected because the file-10 NFR register requires numeric observable thresholds per the framework template's `## How To Fill This File` guidance and per the T-004 packet's `AC-002` rule, and because milestone walk-throughs need a pass/fail criterion finer than BR-010's 1-hour deadline.
+
+#### Consequences
+
+- Positive: gives the M-002 / M-004 manual Doze tests a concrete pass/fail threshold; explicitly defers to `AlarmManager.setAlarmClock`'s OS contract rather than overpromising against it; preserves BR-010's 1-hour window as the late-firing budget independent of the on-time precision target.
+- Negative: a single OS-released update that tightens Doze-throttling behavior could push p95 above the ±60-second threshold and force an ADR-revisit (this is acknowledged as a known platform-behavior risk in `_context/07 § Dependency And Blocker Register`'s Android-OS-background-execution row).
+- Follow-up: the M-004 manual Doze test is the empirical confirmation point for this threshold on the developer's hardware; the post-launch Google Play Console Android Vitals dashboard does not directly measure Reminder firing latency, so post-launch validation relies on Patient-reported issues plus the M-004 / fix-forward re-test discipline per `_context/12 § Operational Runbooks § Fix-forward release after a Production bug`.
+
 ### ADR-064: T-003 inline-authorization caveat — one-time compression of PM-refresh + gatekeeper-flip + Architect-execution into one conversation
 
 - Date: 2026-05-20
