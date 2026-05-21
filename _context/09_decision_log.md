@@ -20,6 +20,186 @@
 
 ## Current State
 
+### ADR-072: M-000 Design Tail Closure milestone complete — files 12 / 11 / 09 / 10 / 13 contextualized, validator green, file-07 reconciled
+
+- Date: 2026-05-21
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect; Project Manager
+- Related milestone or task: M-000 close at T-005; `_context/07_delivery_plan_and_milestones.md § Milestone Register M-000`; `_context/13_threat_model_and_data_classification.md` (the final design-tail artifact); T-005 + M-000-close handoff entry
+
+#### Context
+
+M-000 (Design Tail Closure) was created at ADR-038 to formally track the design-tail file series (09, 10, 11, 12, 13) so the framework was fully contextualized before any M-001 implementation work began. Per `_context/07 § Milestone Register`, the eight Done When items enumerate: (1)-(5) per-file contextualization sessions for files 12 / 11 / 09 / 10 / 13; (6) validator exits zero at close; (7) per-file handoff entries appended; (8) M-000-close handoff entry appended. At T-004 close (2026-05-20T18:40:07Z), the M-000 progress meter stood at `4 / 5 done-when items satisfied` (files 12, 11, 09, 10 closed; 13 remaining). T-005 closes file 13.
+
+#### Decision
+
+M-000 is **complete** at T-005 close on 2026-05-21. All eight Done When items satisfied: (1) `_context/12_environments_and_devops.md` closed at T-001 (2026-05-17T22:33:21Z); (2) `_context/11_visual_language_and_design_system.md` closed at T-002 (2026-05-18); (3) `_context/09_decision_log.md` closed at T-003 (2026-05-20T00:44:41Z); (4) `_context/10_non_functional_requirements.md` closed at T-004 (2026-05-20T18:40:07Z); (5) `_context/13_threat_model_and_data_classification.md` closed at T-005 (2026-05-21); (6) `bash _framework/validate_framework.sh` exits zero post-T-005 close; (7) all per-file handoff entries appended to `_context/handoff_log.md` across T-001..T-005; (8) M-000-close handoff entry appended at T-005 close (this handoff entry).
+
+Per ADR-039 "Touch file 07 once at M-000 close, not incrementally," the file-07 reconciliation is also part of this ADR's scope: (a) the four design-tail rows in `_context/07 § Dependency And Blocker Register` (covering files 09, 10, 11, 12, 13 — four rows because files 10 and 13 share a combined row) are marked **Resolved 2026-05-21 at T-005 close** in their Type cells; (b) the M-000 row of `§ Milestone Register` has its `Status` field flipped from `Active` to `Complete`.
+
+Next milestone is **M-001 — Foundation And Quality Gates** per ADR-036; its `Prerequisites` cell in `_context/07 § Milestone Register` already names "`M-000` complete" so no edit there. T-006 (the next task packet) will be the first M-001 task slice; the next PM-refresh conversation begins M-001 reviewable scope.
+
+#### Alternatives Considered
+
+- **Defer M-000 close until T-005 + a separate close-evidence conversation** — rejected. The T-005 packet `AC-004` explicitly names T-005 close as the M-000 close in a single handoff entry; splitting close-evidence into a separate conversation would violate the "Touch file 07 once at M-000 close" discipline of ADR-039.
+- **Bundle file 13 close + M-000 close into separate ADRs** — rejected. M-000 close is a single delivery event; recording it as a single ADR honors the post-T-003 file-09 amendment convention.
+
+#### Consequences
+
+- M-001 reviewable scope opens for the next PM-refresh conversation. T-006 packet refresh against the first M-001 task slice (e.g., six-module Gradle scaffolding + Konsist + Kover + pre-commit hook + framework validator merge-blocking wiring) is the next role's responsibility.
+- The five-task design-tail sequence (T-001 → T-002 → T-003 → T-004 → T-005, locked at the 2026-05-17T14:23:24Z handoff per ADR-040) is **complete**. Future task IDs (T-006+) target M-001 implementation slices, not design-tail files.
+- The Architect role's "stay in design phase, do not write to `_source/`" guard relaxes for M-001 tasks per CLAUDE.md's role contract — M-001 task packets will explicitly route Architect → Developer turns.
+- The post-T-003 file-09 amendment convention (new ADRs land at Accepted directly; supersession ADRs land at Proposed) is now exercised across T-004 (3 new ADRs at Accepted) and T-005 (5 new ADRs at Accepted, no supersessions); the convention is durable.
+
+### ADR-071: `THR-###` threat ID convention for `_context/13` STRIDE table — disambiguates from `T-###` task-packet IDs from ADR-039
+
+- Date: 2026-05-21
+- Status: Accepted
+- Owners: Architect
+- Related milestone or task: M-000 / T-005; `_context/13_threat_model_and_data_classification.md § STRIDE Threat Table`; T-005 + M-000-close handoff entry
+
+#### Context
+
+The framework template for file 13 (`_framework/13_threat_model_and_data_classification.md`) uses `T-001` etc. as the example Threat ID prefix in its `## STRIDE Threat Table` section. NemoPill's task-packet ID convention from ADR-039 also uses `T-###` (T-001 through T-005 are real task packets to date). Without disambiguation, any future grep for `T-005` would return both the T-005 task packet and any future STRIDE row coincidentally numbered 005.
+
+#### Decision
+
+Threat IDs in `_context/13_threat_model_and_data_classification.md` use the **`THR-###`** prefix. Sequential numbering from `THR-001`; current baseline is `THR-001` through `THR-016` (16 rows; `THR-007` Repudiation resolves to `Not applicable` per AC-002 but the row is preserved). Future threat rows added to file 13 continue the `THR-###` sequence.
+
+The convention applies only to file 13. The `T-###` prefix continues to mean task-packet ID per ADR-039.
+
+#### Alternatives Considered
+
+- **Keep `T-###` per framework-template default and disambiguate by context** — rejected. Grep-pain at scale; the file-13 STRIDE table will grow as features add new attack surfaces, and confusing threat rows with task packets in handoff-log entries would be brittle.
+- **Use a category-based prefix (`SPF-001` for Spoofing, `TMP-001` for Tampering, etc.)** — rejected. Category prefixes would require renumbering when a row changes category (rare but real), and the STRIDE category is already a column in the table; the prefix needn't duplicate it.
+
+#### Consequences
+
+- Any future file-13 STRIDE row uses `THR-###` and continues sequential numbering from the file-13 baseline.
+- Abuse case IDs in `_context/13 § Abuse Cases` use the `A-###` prefix (current baseline `A-001` through `A-006`); this convention is established by file 13 §5 itself and does not need a separate ADR.
+- The PM-refresh conversation that produces T-006 must avoid issuing a task-packet ID that clashes with the THR-### namespace (T-006 is fine; THR-006 and T-006 are different namespaces — grep discipline maintained).
+
+### ADR-070: Patient-facing Terms of Service authoring scope and content requirements deferred to M-006 alongside Spanish Privacy Policy translation
+
+- Date: 2026-05-21
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect; Security
+- Related milestone or task: M-000 / T-005 (decision); M-006 (deferred for execution per ADR-061); `_context/13_threat_model_and_data_classification.md § Open Security Questions Q2`; T-005 + M-000-close handoff entry
+
+#### Context
+
+NemoPill does not currently have a Patient-facing Terms of Service document. The bilingual Privacy Policy at `legal/PRIVACY_POLICY.{en,es}.md` per ADR-025 / ADR-048 (with Spanish long-form translation deferred to M-006 per ADR-061) is the only published content contract. The file-13 threat-model analysis surfaced multiple guidance items that **must** reach the Patient via a Patient-facing legal artifact — and the Privacy Policy is the wrong surface for them (it describes how data is handled, not what the Patient must do). The Architect-role conversation that drafted file 13 surfaced these requirements during §1 (OS-trust assumption), §3 (Privacy Policy + ToS publishing boundary), §5 (abuse-case responses), and §9 Q2 (the dedicated open question).
+
+#### Decision
+
+NemoPill ships a Patient-facing Terms of Service document. Authoring is deferred to the same future task that completes the Spanish Privacy Policy translation per ADR-061 (currently planned for M-006 pre-launch). The ToS is drafted alongside the Privacy Policy translation; both ship as a coordinated bilingual legal artifact set in `legal/PRIVACY_POLICY.{en,es}.md` + `legal/TOS.{en,es}.md` (path convention to be confirmed by the future task; convention follows ADR-048's path pattern).
+
+**Four mandatory content requirements** established by `_context/13 § Open Security Questions Q2`:
+
+- **(a) OS-trust-as-hard-prerequisite acknowledgment** per `_context/13 § Scope And Assumptions` Trust Assumption (i) — Patient is informed that if the Android OS, lock screen, biometric subsystem, AlarmManager, Keystore, or Auto Backup `dataExtractionRules`-honoring subsystem is compromised, NemoPill cannot defend itself and accepts that residual; Patient is responsible for keeping device OS up to date.
+- **(b) Pre-discard checklist** per `_context/13 § Abuse Cases A-002 Response` and ADR-069 Compensating control (i) — (1) Settings → "Delete all my data"; (2) uninstall NemoPill; (3) Android factory reset — mandatory pre-discard guidance.
+- **(c) Lock-screen sensitive-content recommendation** per `_context/13 § Abuse Cases A-003 Response` — Android Settings → Notifications → "Show sensitive content on lock screen: Off" is the strongest mitigation against shoulder-surfing; NemoPill cannot enforce from app code.
+- **(d) Biometric-gate enable + audit-enrolled-biometrics recommendations** per `_context/13 § Abuse Cases A-001 / A-004 / A-006` — Patient informed that (i) app-level `BiometricPrompt` gate is default off per ADR-019; enabling it is the single most effective in-product mitigation against TA-2 / TA-3; (ii) `BiometricPrompt` accepts any device-enrolled biometric by Android API contract — Patients in shared-device relationships should periodically audit OS-enrolled biometrics.
+
+#### Alternatives Considered
+
+- **Embed the four guidance items in the Privacy Policy** — rejected. Privacy Policy describes data processing (Article 13 / CCPA notice format), not Patient behavior obligations; mixing the two confuses the document genre and risks regulatory non-compliance (Patient-behavior text in a Privacy Policy isn't enforceable as a contract).
+- **Surface the four items via UI tooltips or onboarding screens** — rejected. UI surfaces are too transient (tooltips dismiss; onboarding runs once and is forgotten); the items need a durable, referenceable artifact.
+- **Surface via release notes per ADR-047** — rejected. Wrong audience (release notes target Patients reading what's new in this version, not Patients building a long-term security mental model).
+- **Defer ToS authoring indefinitely** — rejected. The ratification of ADR-043 in ADR-069 is *conditional* on the pre-discard checklist landing in ToS as a compensating control; deferring ToS indefinitely would unmoor ADR-069's compensating-control architecture.
+
+#### Consequences
+
+- The M-006 task slice must include ToS authoring as a Done When item (alongside the existing Privacy Policy Spanish translation per ADR-061).
+- Content drift between `_context/13 § Open Security Questions Q2` and the eventual `legal/TOS.{en,es}.md` is a Security-role guardrail per `_context/05 § Quality Gates` — the four mandatory content requirements must be cited in the ToS-authoring task packet's Acceptance Criteria.
+- The four ToS content requirements are reproduced in `_context/13 § Open Security Questions Q2` for direct citation by the future task; this ADR is the durable record.
+- A future regulatory bar change (Chile GDPR-style law replacement, Brazil LGPD re-entry) may add further ToS content requirements; this ADR is amended (not superseded) when that happens.
+
+### ADR-069: ADR-043 (plain-text Room encryption) ratified at T-005 re-evaluation — compensating controls via ToS authoring (ADR-070) and three revisit triggers
+
+- Date: 2026-05-21
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect; Security
+- Related milestone or task: M-000 / T-005; `_context/13_threat_model_and_data_classification.md § Open Security Questions Q1`; supersedes nothing — ADR-043 unchanged; T-005 + M-000-close handoff entry
+
+#### Context
+
+ADR-043 (plain-text Room encryption decision queued for re-evaluation at T-005) explicitly deferred the ratify-or-supersede decision to T-005 against the file-13 adversary enumeration. `_context/13 § STRIDE Threat Table THR-010` scores the Information Disclosure surface of plain-text Room against TA-4 (forensic recovery off discarded hardware) at Likelihood `2` × Impact `4` = `medium` residual. Three outcomes were permitted by the T-005 packet: (a) ratify ADR-043 (no new ADR for the encryption decision itself); (b) supersede with SQLCipher full-database encryption (Proposed ADR); (c) partial column encryption (Proposed ADR).
+
+#### Decision
+
+**Option A — Ratify ADR-043** (plain-text Room kept). The ratification rests on four observations from the file-13 analysis (detailed in `_context/13 § Open Security Questions Q1`):
+
+1. TA-4 Likelihood is genuinely `2` — modern Android factory-reset on stock devices reliably wipes app data; chip-off forensics is rare for medication-adjacent data (low resale value).
+2. The cheapest residual reduction is on the Patient-action side (pre-discard checklist in ToS), not the cryptographic side.
+3. Option B (SQLCipher) introduces new residuals around Android Keystore brittleness (Keystore key loss on factory reset is permanent) and TA-6 supply-chain enlargement (SQLCipher dependency expands the existing supply-chain surface from `THR-005` / `THR-012`).
+4. Option C (partial column encryption) doesn't substantively reduce TA-4 — Adherence patterns are themselves disclosive even with medication names hidden.
+
+**Three compensating controls** make this ratification durable:
+
+- **(i) Pre-discard checklist as mandatory ToS content** — see ADR-070; the upcoming ToS must include (1) Settings → "Delete all my data"; (2) uninstall NemoPill; (3) Android factory reset — in that order, before discarding the device. This addresses the TA-4 root cause (discarded hardware retaining data) at far lower cost than SQLCipher integration.
+- **(ii) Revisit triggers for encrypted-Room** — Option B becomes the default recommendation if any of the following triggers fires: (a) a Patient-data-richer feature lands (free-text notes, photo attachments, Patient-name capture, contact-info capture); (b) the regulatory bar rises (Chile's pending GDPR-style law replacement activates encryption-at-rest expectations, Brazil LGPD re-entry, CCPA / CPRA reasonable-security-measures interpretation tightens); (c) a post-launch incident in the TA-4 class occurs (Patient-reported data-recovery breach via GitHub Issues per ADR-061, security-researcher disclosure). When any trigger fires, a Proposed ADR superseding ADR-043 with Option B is the standard response.
+- **(iii) `_context/13 § Scope And Assumptions` Trust Assumption (i) is load-bearing** for this decision — the OS-trust-as-hard-prerequisite assumption is acknowledged as load-bearing in `_context/13 §1` already; the ratification of ADR-043 is conditional on that assumption holding.
+
+ADR-043 itself is **unchanged**. This ADR is the record of the T-005 re-evaluation event and the compensating-control architecture; ADR-043's `Status` remains `Accepted` and its text is not amended.
+
+#### Alternatives Considered
+
+- **Option B — Supersede ADR-043 with SQLCipher full-database encryption** — rejected per the four observations above. Trade-off summary: TA-4 residual drops `medium` → `low`, but new residuals are introduced around Android Keystore brittleness and supply-chain enlargement; cold-start performance hit must be measured against the `_context/10 § Performance Targets` ADR-066 p95 ≤ 2 s NFR before commitment.
+- **Option C — Partial column encryption (medication-name only)** — rejected per observation 4 above. Adherence dosing patterns reveal medication class even when the name is hidden, so the marginal protection of column-level encryption doesn't justify the per-column complexity in `:medication-management`.
+- **Defer the decision to a future ratification conversation** (Option γ from `_context/13 § Open Security Questions Q1` framing) — rejected because the file-13 analysis is sufficient to settle the decision now; deferring would consume an additional conversation cycle without producing additional analysis.
+
+#### Consequences
+
+- M-001 / M-003 schema work proceeds against plain-text Room per ADR-043; no SQLCipher dependency added to `gradle/libs.versions.toml`.
+- The pre-discard checklist (compensating control (i)) is now a hard ToS content requirement per ADR-070 — the M-006 task slice must surface this.
+- The three revisit triggers are durable; any future PM-refresh or Architect-role conversation that observes a trigger event must surface it for gatekeeper review.
+- If the gatekeeper later reverses this ratification (e.g., a TA-4 class incident occurs), a Proposed ADR superseding ADR-043 with Option B lands at `Status: Proposed` per the post-T-003 supersession convention.
+
+### ADR-068: Canonical device-locked threat envelope — six-actor adversary list (TA-1..TA-6) + four explicit out-of-scope adversary classes + OS-trust-as-hard-prerequisite trust assumption
+
+- Date: 2026-05-21
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect; Security
+- Related milestone or task: M-000 / T-005; `_context/13_threat_model_and_data_classification.md § Scope And Assumptions`; T-005 + M-000-close handoff entry
+
+#### Context
+
+Prior to T-005, the threat-model adversary list was diffuse across `_context/05 § Security Guardrails` (device-locked posture, optional biometric, no-Patient-data-in-failure-evidence, hard-delete-only, no-`HIPAA` posture), `_context/06 § Trust Boundaries And Validation Ownership`, and ~12 file-09 ADRs that mention specific adversaries by context (ADR-021 no-network attack surface; ADR-031 forensic-evidence concerns; ADR-022 deliberate-confirmation pattern). Without a canonical adversary list, any new security ADR or section addition risked re-deriving the adversary surface from scratch, leading to drift.
+
+#### Decision
+
+The canonical NemoPill adversary list — to be cited by future security-adjacent decisions — is the six-actor enumeration locked in `_context/13 § Scope And Assumptions § Threat actor profile`:
+
+- **`TA-1`** — Opportunistic shoulder-surfer or nearby observer; Capability `1`
+- **`TA-2`** — Trusted-circle adversary (family, roommate, caregiver, partner) with intermittent unsupervised access to an unlocked device; Capability `3`
+- **`TA-3`** — Opportunistic thief of an unlocked device; Capability `2`
+- **`TA-4`** — Forensic recovery off discarded / sold / donated hardware; Capability `3`
+- **`TA-5`** — Co-installed malicious app on the same device; Capability `4`
+- **`TA-6`** — Compromised software supply chain (malicious Gradle dependency, direct or transitive); Capability `5`
+
+**Four explicit out-of-scope adversary classes** are also locked:
+
+- Nation-state or law-enforcement-grade forensics against a *locked* device.
+- Targeted attacker with physical custody, unlock, and unlimited time (border seizure, court-ordered custody-dispute access).
+- Compromise of Google Play App Signing or Patient's Google account takeover.
+- Malicious insider in the organizational sense (no organization, no employees in single-Patient framing).
+
+**The OS-trust-as-hard-prerequisite trust assumption** is also locked: if the Android OS, lock-screen subsystem, `BiometricPrompt`, AlarmManager, Android Keystore, or Android Auto Backup honoring `dataExtractionRules` is compromised, NemoPill cannot defend itself and accepts that residual. This is the load-bearing assumption that underpins ADR-021 (no-`INTERNET`), ADR-019 (optional biometric), ADR-041 (no-cloud-backup + dataExtractionRules + Play App Signing), ADR-067 (on-device-only logging), and (via ADR-069's compensating-control structure) ADR-043 (plain-text Room).
+
+#### Alternatives Considered
+
+- **Treat each ADR's adversary mention independently** (status quo prior to T-005) — rejected. Cross-file drift risk; each new ADR would re-derive its adversary surface, leading to inconsistent citations.
+- **Adopt an industry threat-model template** (MITRE ATT&CK Mobile, OWASP Mobile Top 10, NIST SP 800-30) — rejected. None of these maps cleanly onto single-Patient device-locked Android with no network surface; the cited categories (e.g., network-based, lateral movement, exfiltration over network) don't apply; forcing them in would dilute the actual NemoPill threat surface.
+- **Enumerate per-feature adversary lists** — rejected. The adversary list is product-wide (a shoulder-surfer threatens any in-app feature, not feature-specific), so the canonical list lives at the product level.
+
+#### Consequences
+
+- Future security-adjacent decisions cite TA-1..TA-6 by ID rather than re-deriving the adversary set.
+- Adding a new adversary class requires a Proposed ADR superseding ADR-068 (e.g., if a future feature introduces a network surface and a network attacker class becomes relevant, ADR-068 is superseded by a new ADR enumerating the expanded list).
+- The four out-of-scope classes are explicit; future product decisions that would bring any of them into scope (e.g., adding multi-tenant support brings "malicious insider" into scope) require revisiting this ADR.
+- The OS-trust assumption being load-bearing means any change to the OS-vendor relationship (e.g., distributing via F-Droid in addition to Play Store, which would re-evaluate the App Signing trust assumption) requires revisiting this ADR.
+
 ### ADR-067: On-device-only logging contract — Log.e/Log.w for Result.Err.Unexpected only + Play Console Android Vitals as the sole remote evidence stream
 
 - Date: 2026-05-20
