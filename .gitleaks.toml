@@ -1,0 +1,56 @@
+# NemoPill — gitleaks configuration (ADR-044)
+# Extends the default gitleaks ruleset with patterns specific to Android/Gradle
+# and Remitly-adjacent secrets that must never appear in this codebase.
+#
+# Reference: https://github.com/gitleaks/gitleaks
+
+title = "NemoPill gitleaks config"
+
+[extend]
+# Inherit all upstream gitleaks detection rules as the baseline.
+useDefault = true
+
+[[rules]]
+id          = "android-keystore-password"
+description = "Android keystore password literal in any file"
+regex       = '''(?i)(keystore[_\-.]?password|storePassword|keyPassword)\s*[=:]\s*["\']?[^\s"\']{6,}'''
+tags        = ["android", "credentials", "secret"]
+
+[[rules]]
+id          = "android-key-alias"
+description = "Android key alias literal in any file"
+regex       = '''(?i)(keyAlias|key[_\-.]?alias)\s*[=:]\s*["\']?[^\s"\']{3,}'''
+tags        = ["android", "credentials"]
+
+[[rules]]
+id          = "gradle-signing-config-secret"
+description = "Hardcoded signing credential in Gradle build file"
+regex       = '''(?i)(storeFile|storePassword|keyAlias|keyPassword)\s*=\s*["\']?[^\s"\']+'''
+paths       = ["**/*.gradle", "**/*.gradle.kts", "**/gradle.properties"]
+tags        = ["gradle", "signing", "secret"]
+
+[[rules]]
+id          = "nemopill-no-api-key"
+description = "Generic API key literal — medication data must stay local (ADR-021)"
+regex       = '''(?i)(api[_\-.]?key|apikey|api[_\-.]?secret|access[_\-.]?token)\s*[=:]\s*["\']?[A-Za-z0-9+/]{16,}'''
+tags        = ["api-key", "security"]
+
+[allowlist]
+# Allow gitleaks to skip lines explicitly annotated by the developer.
+# Use sparingly — every allow requires team lead sign-off.
+regexTarget = "line"
+regexes     = [
+    # Standard gitleaks inline suppression annotation.
+    "gitleaks:allow",
+]
+
+# Paths that are entirely excluded from scanning.
+paths = [
+    # Gradle wrapper jar is a binary — not a secret source.
+    "gradle/wrapper/gradle-wrapper.jar",
+    # Test fixture files intentionally contain "bad" patterns for negative tests.
+    "**/fixtures/**",
+    # Build output directories.
+    "**/build/**",
+    "**/.gradle/**",
+]

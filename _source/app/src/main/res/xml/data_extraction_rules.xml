@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NemoPill — Data Extraction Rules
+
+  Excludes ALL application data from:
+  - Android Auto-Backup (cloud backup via Google Drive)
+  - Device-to-device transfer (e.g. device clone workflows)
+
+  Rationale: medication schedules, dose history, and adherence records are
+  personal health data. They must remain on the originating device only.
+  See: ADR-021, _context/05 Security Guardrails, _context/12 backup config.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="file" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="file" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

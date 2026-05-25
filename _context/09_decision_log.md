@@ -20,6 +20,85 @@
 
 ## Current State
 
+### ADR-075: Konsist package path — `io.nemopill.core.konsist` adopted; `_context/08` typo noted
+
+- Date: 2026-05-25
+- Status: Accepted
+- Owners: Developer; Isidro Rodriguez (Human gatekeeper)
+- Related milestone or task: T-006; `_context/08_active_task_packet.md § Konsist Tests`; `_context/04_solution_architecture.md § Package Conventions`
+
+#### Context
+
+`_context/08_active_task_packet.md` specified the Konsist test package path as `com.nemopill.core.konsist` — using the `com.` prefix, which diverges from the project-wide `io.nemopill.*` namespace established in `_context/04_solution_architecture.md`. The two files disagreed; the CLAUDE.md stop-condition for inter-file conflicts was triggered.
+
+#### Decision
+
+Use `io.nemopill.core.konsist` for the Konsist test package, consistent with `_context/04`. The `com.nemopill` reference in `_context/08` is a transcription error introduced during PM contextualization. No behavior change — the package path affects only test class names and Gradle test filter patterns.
+
+#### Consequences
+
+- All six Konsist rule files are written to `io/nemopill/core/konsist/` under `_source/core/src/test/kotlin/`.
+- The CI `arch-conformance` stage filters tests with `--tests "io.nemopill.core.konsist.*"`.
+- `_context/08_active_task_packet.md` should be corrected to `io.nemopill.core.konsist` at next PM task refresh (T-007 or later).
+- No ADR backfill required; the `io.nemopill.*` namespace was already settled in ADR-009 / `_context/04`.
+
+---
+
+### ADR-074: PendingIntent FLAG_IMMUTABLE rule uses text-scan heuristic at Konsist 0.17.0
+
+- Date: 2026-05-25
+- Status: Accepted
+- Owners: Developer; Isidro Rodriguez (Human gatekeeper)
+- Related milestone or task: T-006; ADR-023; `_context/05_engineering_quality_security_and_compliance.md § Security Guardrails`
+
+#### Context
+
+ADR-023 mandates that every `PendingIntent.getBroadcast / getActivity / getService / getForegroundService` call include `PendingIntent.FLAG_IMMUTABLE`. Konsist 0.17.0 exposes file text but its AST-level bitwise-expression analysis is not reliable enough to parse `flags or FLAG_IMMUTABLE` combinator patterns. A strict per-call AST inspection would require either upgrading Konsist (not yet available) or writing a custom PSI visitor (out of T-006 scope).
+
+#### Decision
+
+Implement a text co-occurrence heuristic: if a production file imports `android.app.PendingIntent` AND calls any factory method, the rule asserts that the string `FLAG_IMMUTABLE` appears anywhere in the file text. This catches the most dangerous omissions (files that never use the flag at all) while accepting the narrow false-negative of a file that uses FLAG_IMMUTABLE in one call but omits it in another. A TODO comment in `PendingIntentFlagImmutableRule.kt` records this gap.
+
+#### Consequences
+
+- Rule implementation is simpler and more readable.
+- Narrow false-negative remains: multi-call files could hide a single non-compliant call. Accepted for M-001 scope; upgrade to per-call AST analysis deferred to a future Konsist version.
+- Negative tests verify both the detection path (absent flag) and the pass path (flag present).
+
+---
+
+### ADR-073: T-006 Foundation implemented — Gradle scaffolding, Konsist suite, pre-commit hook, CI pipeline
+
+- Date: 2026-05-25
+- Status: Accepted
+- Owners: Developer; Isidro Rodriguez (Human gatekeeper)
+- Related milestone or task: T-006; M-001 Foundation (Planned); `_context/08_active_task_packet.md`; `_context/12_environments_and_devops.md`
+
+#### Context
+
+M-001 Foundation requires a compilable six-module Gradle project, architecture-conformance tests wired to CI, and branch-protection tooling before any feature code is written. T-006 is the first Apply Mode task that writes to `_source/`, `_build/`, and `.github/`.
+
+#### Decision
+
+All T-006 deliverables created in a single Apply Mode session:
+
+- **`_source/`**: `settings.gradle.kts`, root `build.gradle.kts` (with `installGitHooks` task), `gradle.properties` (configuration cache, parallel builds), `gradle/libs.versions.toml` (version catalog), `gradle/wrapper/gradle-wrapper.properties` (Gradle 8.10.2), `gradlew` / `gradlew.bat`.
+- **Module build files**: `:app` (Android application, compileSdk=35, minSdk=26, targetSdk=35, Java 17), `:core` (kotlin-jvm, Konsist on testImplementation), `:medication-management`, `:scheduling`, `:notifications`, `:adherence-tracking` (Android library, same SDK targets).
+- **Manifests**: `app/src/main/AndroidManifest.xml` — `allowBackup="false"`, `dataExtractionRules`, zero `<uses-permission android:name="android.permission.INTERNET"/>`. `app/src/main/res/xml/data_extraction_rules.xml` — excludes all domains from both `<cloud-backup>` and `<device-transfer>`. Minimal `AndroidManifest.xml` for each feature library module.
+- **Konsist rules** (`_source/core/src/test/kotlin/io/nemopill/core/konsist/`): `PriorityOneInternetPermissionAllowListRule`, `NoNetworkImportsRule`, `DomainLayerNoAndroidRule`, `NoUpwardLayerDependencyRule`, `NoCrossFeatureDomainImportRule`, `PendingIntentFlagImmutableRule` — each with positive and negative test classes.
+- **Pre-commit hook**: `_build/hooks/pre-commit` — gitleaks → framework validator → ktlintCheck in sequence.
+- **CI**: `.github/workflows/ci.yml` — six jobs (setup, lint, secret-scan, framework-validate, arch-conformance, build). `.gitleaks.toml` — extends default ruleset with Android/Gradle-specific patterns; excludes `fixtures/` and `build/`.
+
+#### Consequences
+
+- M-001 Done-When items 1 (compilable modules), 2 (Konsist rules passing), 3 (pre-commit hook), 5 (gitleaks in CI), 6 (framework validate in CI) are satisfied.
+- M-001 Done-When item 4 (≥ 80% unit/integration coverage) and item 7 (Robolectric green) are deferred to T-007 per task packet.
+- `_source/` is now the Gradle project root; all CI `run` steps use `working-directory: _source`.
+- The `installGitHooks` task is wired to the root `build` lifecycle; new contributors receive the hook automatically after their first `./gradlew build`.
+- KSP annotation processing (Room, Hilt) is listed as `annotationProcessor` for now — switching to KSP plugin is deferred to the first feature module task that actually implements Room or Hilt (T-007 or later).
+
+---
+
 ### ADR-072: M-000 Design Tail Closure milestone complete — files 12 / 11 / 09 / 10 / 13 contextualized, validator green, file-07 reconciled
 
 - Date: 2026-05-21

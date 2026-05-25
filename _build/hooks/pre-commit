@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# NemoPill — pre-commit hook
+# Installed by: _source/build.gradle.kts → installGitHooks task (ADR-044)
+#
+# Runs three checks in sequence before every commit:
+#   1. gitleaks  — scan staged files for secrets / credentials
+#   2. framework — validate _context/ placeholder resolution
+#   3. ktlint    — Kotlin style lint (staged files only, via Gradle)
+#
+# Any failure aborts the commit with a non-zero exit code.
+# To skip in emergencies only: git commit --no-verify   (requires team lead approval)
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SOURCE_DIR="${REPO_ROOT}/_source"
+
+# ─── Colour helpers ───────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Colour
+
+step() { echo -e "${YELLOW}▶ [pre-commit]${NC} $*"; }
+ok()   { echo -e "${GREEN}✓ [pre-commit]${NC} $*"; }
+fail() { echo -e "${RED}✗ [pre-commit]${NC} $*" >&2; }
+
+# ─── Step 1: gitleaks secret scan ─────────────────────────────────────────────
+step "Running gitleaks secret scan on staged files…"
+
+if command -v gitleaks &>/dev/null; then
+    if ! gitleaks protect --staged --redact --config "${REPO_ROOT}/.gitleaks.toml" 2>&1; then
+        fail "gitleaks detected potential secrets in staged files."
+        fail "Review the output above, remove the secrets, then re-stage and retry."
+        fail "If this is a false positive, annotate the line with:"
+        fail "  # gitleaks:allow"
+        exit 1
+    fi
+    ok "gitleaks: no secrets detected."
+else
+    echo -e "${YELLOW}⚠ [pre-commit] gitleaks not found — skipping secret scan.${NC}"
+    echo "  Install: https://github.com/gitleaks/gitleaks#installing"
+    echo "  CI will still run this check on push."
+fi
+
+# ─── Step 2: framework validator ──────────────────────────────────────────────
+step "Validating _context/ framework files…"
+
+VALIDATOR="${REPO_ROOT}/_framework/validate_framework.sh"
+
+if [[ -f "${VALIDATOR}" ]]; then
+    if ! bash "${VALIDATOR}" 2>&1; then
+        fail "Framework validation failed — unresolved placeholders detected in _context/."
+        fail "Run:  bash _framework/validate_framework.sh  to see details."
+        exit 1
+    fi
+    ok "Framework: all _context/ files resolved."
+else
+    echo -e "${YELLOW}⚠ [pre-commit] validate_framework.sh not found at ${VALIDATOR} — skipping.${NC}"
+fi
+
+# ─── Step 3: ktlint style check ───────────────────────────────────────────────
+step "Running ktlint style check…"
+
+if [[ -f "${SOURCE_DIR}/gradlew" ]]; then
+    # Run from _source/ so Gradle resolves the project correctly.
+    cd "${SOURCE_DIR}"
+    if ! ./gradlew ktlintCheck --quiet --continue 2>&1; then
+        fail "ktlint found style violations."
+        fail "Auto-fix with:  cd _source && ./gradlew ktlintFormat"
+        fail "Then re-stage the fixed files and retry."
+        exit 1
+    fi
+    ok "ktlint: no style violations."
+else
+    echo -e "${YELLOW}⚠ [pre-commit] gradlew not found at ${SOURCE_DIR}/gradlew — skipping ktlint.${NC}"
+fi
+
+echo ""
+ok "All pre-commit checks passed. Proceeding with commit."

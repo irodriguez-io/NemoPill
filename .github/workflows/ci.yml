@@ -1,0 +1,213 @@
+# NemoPill — GitHub Actions CI
+# Six merge-blocking stages per ADR-044 and _context/12_environments_and_devops.md
+#
+# Stages (T-006 scope):
+#   1. setup              — Validate environment; restore Gradle cache
+#   2. lint               — ktlint style check
+#   3. secret-scan        — gitleaks full-tree scan
+#   4. framework-validate — _context/ placeholder resolution check
+#   5. arch-conformance   — Konsist architecture rules
+#   6. build              — Assemble debug APK
+#
+# Stages deferred to T-007:
+#   7. unit-integration-ui-snapshot  (Robolectric + Compose UI)
+#   8. coverage                      (Kover threshold gate)
+#
+# Branch protection: all six jobs listed as required status checks on main.
+
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Cancel in-progress runs for the same PR to save runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Gradle project lives one level below the repo root.
+  GRADLE_DIR: _source
+  JAVA_VERSION: "17"
+  JAVA_DISTRIBUTION: "temurin"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1 — Setup
+# Validates that the Gradle wrapper checksum is not tampered with and primes
+# the Gradle build cache for all downstream jobs.
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  setup:
+    name: "1 · Setup"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          build-scan-publish: false
+          cache-read-only: false
+
+      - name: Validate Gradle Wrapper checksum
+        uses: gradle/actions/wrapper-validation@v3
+
+      # Warm the configuration cache and dependency cache for downstream jobs.
+      - name: Prime Gradle cache
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: ./gradlew help --configuration-cache
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 — Lint (ktlint)
+# ─────────────────────────────────────────────────────────────────────────────
+  lint:
+    name: "2 · Lint"
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          cache-read-only: true
+
+      - name: ktlint check
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: ./gradlew ktlintCheck --continue
+
+      - name: Upload ktlint reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktlint-reports
+          path: ${{ env.GRADLE_DIR }}/**/build/reports/ktlint/
+          retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3 — Secret scan (gitleaks)
+# Scans the entire commit tree. Any leaked credential fails the build.
+# ─────────────────────────────────────────────────────────────────────────────
+  secret-scan:
+    name: "3 · Secret Scan"
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout (full history for gitleaks)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config-path: .gitleaks.toml
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 4 — Framework validation
+# Ensures _context/ has no unresolved {{REQUIRED:}} / {{OPTIONAL:}} / {{EXAMPLE:}}
+# placeholders before any code-level checks run.
+# ─────────────────────────────────────────────────────────────────────────────
+  framework-validate:
+    name: "4 · Framework Validate"
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate _context/ framework files
+        run: bash _framework/validate_framework.sh
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 5 — Architecture conformance (Konsist)
+# Runs the six Konsist rules defined in :core test source set.
+# INTERNET-permission allowlist rule fires first (THR-016 priority).
+# ─────────────────────────────────────────────────────────────────────────────
+  arch-conformance:
+    name: "5 · Architecture Conformance"
+    runs-on: ubuntu-latest
+    needs: [ lint, framework-validate ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          cache-read-only: true
+
+      - name: Run Konsist architecture tests
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: ./gradlew :core:test --tests "io.nemopill.core.konsist.*"
+
+      - name: Upload Konsist test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: konsist-reports
+          path: ${{ env.GRADLE_DIR }}/core/build/reports/tests/test/
+          retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 6 — Build (debug APK)
+# Assembles the debug build to confirm the project compiles end-to-end.
+# ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: "6 · Build"
+    runs-on: ubuntu-latest
+    needs: [ secret-scan, arch-conformance ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          cache-read-only: true
+
+      - name: Assemble debug APK
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: ./gradlew assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: nemopill-debug-apk
+          path: ${{ env.GRADLE_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

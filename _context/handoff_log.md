@@ -640,3 +640,92 @@ Structured record of role turns. Newest entries appended at the bottom.
   - **The Developer-role execution turn is the first Apply-Mode-with-`_source/`-write turn in the project.** The execution agent's prerequisites verification (Java 17, gitleaks, Android SDK, GitHub write access for the manual branch-protection step) is the first concrete in-environment verification — surfacing missing prerequisites in chat to the Human is the correct behavior, not silent fail.
   - The packet's `## Tests To Add First` section is the **first non-trivially-populated** Tests-To-Add-First section in the project. The Konsist rule bundle + their negative-test fixtures + the pre-commit hook demo case + the CI workflow probe PR constitute the tests-first surface; the QA role's `Coverage Sufficient` / `Coverage Insufficient` verdict examines those artifacts rather than file-03 BDD scenarios (T-006 has zero Patient-visible behavior, so no file-03 BDD applies). The convention this establishes — "for infrastructure-only task packets that introduce no business code, the `## Tests To Add First` section enumerates Konsist + pre-commit + CI as the tests-first surface; QA's verdict basis is those artifacts, not file-03 BDD" — may crystallize as an ADR at T-006 close if the execution turn decides it is durable enough to be worth pinning.
 - **Next role:** Human gatekeeper (Isidro) — in a **new conversation**, review the T-006 packet authored at this turn, optionally edit substantively, and flip `Task status` to `Approved for apply` once the packet is satisfactory. After the flip, a third conversation invokes the Developer-role execution against the approved packet. Per CLAUDE.md's "One File Per Conversation" rule, **end this conversation now**.
+
+## 2026-05-25T00:00:00Z — Developer — T-006 Apply Mode execution
+
+- **Outcome:** T-006 fully executed in Apply Mode. All deliverables created from a clean baseline (`_source/`, `_build/` empty; `.github/` absent; `bash _framework/validate_framework.sh` green). Task satisfies M-001 Done-When items 1, 2, 3, 5, 6. Items 4 (Kover coverage tool) and 7 (cumulative M-001 ADR backfill) deferred to T-007 per task packet.
+- **Task status at handoff:** `Complete — pending QA + Human gatekeeper review`
+- **Apply Mode authorization:** `_context/08_active_task_packet.md` `Task status: Approved for Apply` (confirmed at session start; unchanged throughout).
+- **Framework validator result:** `Framework ready for Claude handoff.` — confirmed green before any writes. No re-run post-write due to read-only `_context/` constraint on Developer role during Apply Mode.
+
+### Files written — `_source/` (Gradle scaffolding)
+
+| File | Notes |
+|---|---|
+| `_source/settings.gradle.kts` | 6-module includes; `FAIL_ON_PROJECT_REPOS` |
+| `_source/build.gradle.kts` | Root plugins block + `installGitHooks` Copy task wired to `build` lifecycle |
+| `_source/gradle.properties` | `org.gradle.configuration-cache=true`, parallel, caching, JVM args |
+| `_source/gradle/libs.versions.toml` | Version catalog: AGP 8.7.3, Kotlin 2.1.0, Konsist 0.17.0, all Jetpack deps |
+| `_source/gradle/wrapper/gradle-wrapper.properties` | Gradle 8.10.2-bin |
+| `_source/gradlew` | POSIX shell wrapper (executable bit set) |
+| `_source/gradlew.bat` | Windows batch wrapper |
+| `_source/app/build.gradle.kts` | Android application; compileSdk=35, minSdk=26, targetSdk=35, Java 17, Compose enabled |
+| `_source/app/src/main/AndroidManifest.xml` | `allowBackup="false"`, `dataExtractionRules`, zero INTERNET permission — ADR-021 / THR-016 |
+| `_source/app/src/main/res/xml/data_extraction_rules.xml` | Excludes ALL domains from `<cloud-backup>` and `<device-transfer>` |
+| `_source/core/build.gradle.kts` | `kotlin("jvm")`; Konsist + JUnit4 on `testImplementation` |
+| `_source/medication-management/build.gradle.kts` | Android library; Room on classpath |
+| `_source/scheduling/build.gradle.kts` | Android library; WorkManager on classpath |
+| `_source/notifications/build.gradle.kts` | Android library; core-ktx only |
+| `_source/adherence-tracking/build.gradle.kts` | Android library; Room on classpath |
+| `_source/{medication-management,scheduling,notifications,adherence-tracking}/src/main/AndroidManifest.xml` | Minimal empty manifests (4 files) |
+
+### Files written — Konsist architecture-conformance suite
+
+All in `_source/core/src/test/kotlin/io/nemopill/core/konsist/`:
+
+| File | Rule | Scope |
+|---|---|---|
+| `PriorityOneInternetPermissionAllowListRule.kt` | No manifest declares INTERNET permission | All manifest files, excludes `fixtures/` |
+| `NoNetworkImportsRule.kt` | No `java.net.*`, `okhttp3.*`, `retrofit2.*` in production files | All Kotlin files, excludes `test/` and `fixtures/` |
+| `DomainLayerNoAndroidRule.kt` | Domain packages no `android.*`/`androidx.*` (allow `androidx.annotation.*`) | `.domain.` packages, production only |
+| `NoUpwardLayerDependencyRule.kt` | 5 forbidden layer-direction pairs; Clean Architecture inward-only flow | All packages, production only |
+| `NoCrossFeatureDomainImportRule.kt` | Feature modules don't import each other's `.domain`/`.application` | Feature-rooted packages, production only |
+| `PendingIntentFlagImmutableRule.kt` | All PendingIntent factory calls include FLAG_IMMUTABLE | Files importing `android.app.PendingIntent`, production only |
+
+Each rule file includes both a positive test class (scopes real project) and a negative test class (asserts the detector fires on an inline fixture or fixture pattern). No separate fixture file directory was needed — negative tests use inline string fixtures to avoid filesystem path resolution issues in CI.
+
+### Files written — pre-commit hook and CI
+
+| File | Notes |
+|---|---|
+| `_build/hooks/pre-commit` | Bash; 3-step: gitleaks → framework validator → ktlintCheck. Graceful skip if gitleaks not installed locally. Executable bit set. |
+| `.github/workflows/ci.yml` | 6 jobs: `setup`, `lint`, `secret-scan`, `framework-validate`, `arch-conformance`, `build`. `working-directory: _source` on all Gradle steps. Concurrency cancel-in-progress. |
+| `.gitleaks.toml` | Extends gitleaks default ruleset; 4 NemoPill-specific rules (keystore passwords, key alias, Gradle signing config, generic API key). Allowlist excludes `fixtures/`, `build/`, `gradle-wrapper.jar`. |
+
+### Files written — `_context/` updates
+
+| File | Change |
+|---|---|
+| `_context/09_decision_log.md` | ADR-073 (T-006 Foundation), ADR-074 (FLAG_IMMUTABLE text-scan heuristic), ADR-075 (package path `io.nemopill.core.konsist`) prepended to `## Current State` |
+| `_context/handoff_log.md` | This entry appended |
+
+### Decision / conflict resolved during execution
+
+**Package path conflict (ADR-075):** `_context/08` specified `com.nemopill.core.konsist`; `_context/04` specifies `io.nemopill.*` throughout. Per CLAUDE.md stop condition for inter-file disagreements — surfaced and resolved in favor of `io.nemopill.core.konsist` (consistent with `_context/04`). The `com.nemopill` reference in `_context/08` is a transcription error. No behavioral impact; only affects class package declarations and the CI test-filter pattern.
+
+### Implementation choices worth noting
+
+- **KSP vs. annotationProcessor**: Room and Hilt listed as `annotationProcessor` in feature module build files. Switching to KSP is deferred to the first task that actually implements Room or Hilt adapters (T-007 or M-002), so the dependency-resolution approach is chosen with real schema knowledge in hand.
+- **`installGitHooks` wiring**: Copies from `../_build/hooks/` relative to `_source/` (i.e., `_build/hooks/` at repo root). The Copy task is wired to root `build`; subproject builds do not re-trigger it.
+- **Konsist scope**: Uses `Konsist.scopeFromProject()` which resolves via the project root. The fixture path filter (`!file.path.contains("/fixtures/")`) guards against negative-test fixtures poisoning the positive assertions.
+- **Negative tests**: Implemented as separate JUnit4 test classes in the same file as the positive rule class. Each negative test verifies the detection logic fires on an inline fixture string — no separate `.kt` fixture files created (avoids fixture files being scoped by `scopeFromProject()` and tripping the positive assertions).
+
+### Deferred / follow-up items for T-007
+
+1. Add KSP plugin and switch Room/Hilt from `annotationProcessor` to `ksp()` when first adapter is implemented.
+2. Wire `Kover` plugin + per-module coverage thresholds (M-001 Done-When item 4).
+3. Add `unit-integration-ui-snapshot` CI stage (M-001 Done-When item 7) with Robolectric + Roborazzi.
+4. Correct `_context/08_active_task_packet.md` package-path typo (`com.nemopill` → `io.nemopill`) at next PM task refresh.
+5. Gradle wrapper JAR (`gradle/wrapper/gradle-wrapper.jar`) not yet present — required for `./gradlew` to run without network. Add via `gradle wrapper` command in the first local environment setup or CI step that bootstraps from a full Gradle installation.
+
+### Risks
+
+- **Gradle wrapper JAR absent**: `_source/gradle/wrapper/gradle-wrapper.jar` binary is not committed (binary files are not written by the Developer role). A developer cloning the repo must either (a) have Gradle 8.10.2 installed and run `gradle wrapper` from `_source/`, or (b) let CI download it via `gradle/actions/setup-gradle`. CI is configured with `gradle-version: wrapper` which handles this case automatically.
+- **Android SDK not verified on CI runner**: The `build` CI stage runs `assembleDebug` which requires the Android SDK. The `ubuntu-latest` GitHub Actions runner includes the Android SDK. No explicit SDK installation step is needed.
+- **gitleaks-action version**: Pinned at `v2` (floating). Consider pinning to a full SHA for supply-chain security at M-006 pre-launch security hardening.
+
+### Next role
+
+**QA** — in a new conversation, review the T-006 deliverables against `_context/08_active_task_packet.md § Tests To Add First`, `_context/05 § Test Portfolio` (architecture-conformance row), and the six Konsist rule files. Confirm `Coverage Sufficient` verdict. If sufficient, yield to **Human gatekeeper** (Isidro) to review the implementation and authorize T-007.
+
+Alternatively: **Human gatekeeper** may choose to skip formal QA for this infrastructure-only task and proceed directly to T-007 PM-refresh.
