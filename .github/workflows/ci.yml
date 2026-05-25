@@ -3,7 +3,7 @@
 #
 # Stages (T-006 scope):
 #   1. setup              — Validate environment; restore Gradle cache
-#   2. lint               — ktlint style check
+#   2. lint               — Android Lint + ktlint style check
 #   3. secret-scan        — gitleaks full-tree scan
 #   4. framework-validate — _context/ placeholder resolution check
 #   5. arch-conformance   — Konsist architecture rules
@@ -14,6 +14,9 @@
 #   8. coverage                      (Kover threshold gate)
 #
 # Branch protection: all six jobs listed as required status checks on main.
+#
+# T-006 fix-up: added android-actions/setup-android@v3 to lint, arch-conformance,
+# and build jobs; lint now runs both `lint` (Android Lint) and `ktlintCheck`.
 
 name: CI
 
@@ -85,22 +88,27 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
 
+      - name: Set up Android SDK (compileSdk 35)
+        uses: android-actions/setup-android@v3
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: wrapper
           cache-read-only: true
 
-      - name: ktlint check
+      - name: Android Lint + ktlint check
         working-directory: ${{ env.GRADLE_DIR }}
-        run: ./gradlew ktlintCheck --continue
+        run: ./gradlew lint ktlintCheck --continue
 
-      - name: Upload ktlint reports
+      - name: Upload lint and ktlint reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ktlint-reports
-          path: ${{ env.GRADLE_DIR }}/**/build/reports/ktlint/
+          name: lint-reports
+          path: |
+            ${{ env.GRADLE_DIR }}/**/build/reports/lint-results*.html
+            ${{ env.GRADLE_DIR }}/**/build/reports/ktlint/
           retention-days: 7
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -159,6 +167,9 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
 
+      - name: Set up Android SDK (compileSdk 35)
+        uses: android-actions/setup-android@v3
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -194,6 +205,9 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Android SDK (compileSdk 35)
+        uses: android-actions/setup-android@v3
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
