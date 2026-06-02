@@ -25,13 +25,13 @@ import org.junit.Test
  * the check fails.
  */
 class PendingIntentFlagImmutableRule {
-
-    private val pendingIntentFactories = listOf(
-        "PendingIntent.getBroadcast",
-        "PendingIntent.getActivity",
-        "PendingIntent.getService",
-        "PendingIntent.getForegroundService",
-    )
+    private val pendingIntentFactories =
+        listOf(
+            "PendingIntent.getBroadcast",
+            "PendingIntent.getActivity",
+            "PendingIntent.getService",
+            "PendingIntent.getForegroundService",
+        )
 
     @Test
     fun `all PendingIntent construction sites include FLAG_IMMUTABLE`() {
@@ -68,15 +68,15 @@ class PendingIntentFlagImmutableRule {
  * Negative test — confirms the rule fires when FLAG_IMMUTABLE is absent.
  */
 class PendingIntentFlagImmutableRuleNegativeTest {
-
     @Test
     fun `detector fires when PendingIntent factory call lacks FLAG_IMMUTABLE`() {
         // Simulate a file that imports PendingIntent and calls getBroadcast
         // but omits FLAG_IMMUTABLE.
-        val fixtureText = """
+        val fixtureText =
+            """
             import android.app.PendingIntent
             val pi = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
-        """.trimIndent()
+            """.trimIndent()
 
         val callsFactory = fixtureText.contains("PendingIntent.getBroadcast")
         val hasFlagImmutable = fixtureText.contains("FLAG_IMMUTABLE")
@@ -89,13 +89,14 @@ class PendingIntentFlagImmutableRuleNegativeTest {
 
     @Test
     fun `detector passes when PendingIntent factory includes FLAG_IMMUTABLE`() {
-        val fixtureText = """
+        val fixtureText =
+            """
             import android.app.PendingIntent
             val pi = PendingIntent.getBroadcast(
                 context, 0, intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
-        """.trimIndent()
+            """.trimIndent()
 
         val callsFactory = fixtureText.contains("PendingIntent.getBroadcast")
         val hasFlagImmutable = fixtureText.contains("FLAG_IMMUTABLE")

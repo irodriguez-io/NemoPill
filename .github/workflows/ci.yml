@@ -63,8 +63,22 @@ jobs:
           build-scan-publish: false
           cache-read-only: false
 
-      - name: Validate Gradle Wrapper checksum
-        uses: gradle/actions/wrapper-validation@v3
+      # Supply-chain check: verify the committed gradle-wrapper.jar against a
+      # pinned, known-good SHA-256 rather than gradle/actions/wrapper-validation@v3,
+      # whose live checksum-registry lookup proved flaky on the runner
+      # (intermittent ETIMEDOUT to Cloudflare). This is offline and deterministic.
+      #
+      # ⚠️  WHEN UPGRADING GRADLE: this hash is specific to the wrapper JAR for the
+      #     version pinned in _source/gradle/wrapper/gradle-wrapper.properties
+      #     (currently 8.10.2). After changing the Gradle version you MUST update
+      #     the hash below to the new version's official wrapper checksum, or this
+      #     step will fail. Get it from https://gradle.org/release-checksums/
+      #     (the "Wrapper JAR" SHA-256 for the target version), or locally:
+      #       shasum -a 256 _source/gradle/wrapper/gradle-wrapper.jar
+      - name: Validate Gradle Wrapper checksum (pinned for Gradle 8.10.2)
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: |
+          echo "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
 
       # Warm the configuration cache and dependency cache for downstream jobs.
       - name: Prime Gradle cache

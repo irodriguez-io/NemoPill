@@ -19,7 +19,6 @@ import org.junit.Test
  * unit-testable without a device.
  */
 class DomainLayerNoAndroidRule {
-
     @Test
     fun `domain layer classes do not import Android framework types`() {
         val allowedPrefixes = listOf("androidx.annotation.")
@@ -44,14 +43,15 @@ class DomainLayerNoAndroidRule {
                 isAndroid && !isAllowed
             }
             .forEach { file ->
-                val offending = file.imports
-                    .filter { import ->
-                        val name = import.name
-                        val isAndroid = name.startsWith("android.") || name.startsWith("androidx.")
-                        val isAllowed = allowedPrefixes.any { name.startsWith(it) }
-                        isAndroid && !isAllowed
-                    }
-                    .map { it.name }
+                val offending =
+                    file.imports
+                        .filter { import ->
+                            val name = import.name
+                            val isAndroid = name.startsWith("android.") || name.startsWith("androidx.")
+                            val isAllowed = allowedPrefixes.any { name.startsWith(it) }
+                            isAndroid && !isAllowed
+                        }
+                        .map { it.name }
 
                 assert(false) {
                     "ARCHITECTURE VIOLATION (ADR-009): Domain-layer file ${file.path} " +
@@ -67,7 +67,6 @@ class DomainLayerNoAndroidRule {
  * imports a disallowed Android type.
  */
 class DomainLayerNoAndroidRuleNegativeTest {
-
     @Test
     fun `detector flags android Context import in a domain package`() {
         val allowedPrefixes = listOf("androidx.annotation.")

@@ -23,22 +23,32 @@ import org.junit.Test
  *                    or contains `.ui.`         or ends with `.ui`
  */
 class NoUpwardLayerDependencyRule {
-
     private val presentationMarkers = listOf(".presentation.", ".presentation", ".ui.", ".ui")
-    private val applicationMarkers  = listOf(".application.", ".application")
+    private val applicationMarkers = listOf(".application.", ".application")
     private val infrastructureMarkers = listOf(".infrastructure.", ".infrastructure")
-    private val domainMarkers       = listOf(".domain.", ".domain")
+    private val domainMarkers = listOf(".domain.", ".domain")
 
-    private fun String.isPresentation() = presentationMarkers.any { contains(it) || endsWith(it) }
-    private fun String.isApplication()  = applicationMarkers.any  { contains(it) || endsWith(it) }
-    private fun String.isInfrastructure() = infrastructureMarkers.any { contains(it) || endsWith(it) }
-    private fun String.isDomain()       = domainMarkers.any       { contains(it) || endsWith(it) }
+    private val isPresentation: String.() -> Boolean = {
+        presentationMarkers.any { marker -> contains(marker) || endsWith(marker) }
+    }
+
+    private val isApplication: String.() -> Boolean = {
+        applicationMarkers.any { marker -> contains(marker) || endsWith(marker) }
+    }
+
+    private val isInfrastructure: String.() -> Boolean = {
+        infrastructureMarkers.any { marker -> contains(marker) || endsWith(marker) }
+    }
+
+    private val isDomain: String.() -> Boolean = {
+        domainMarkers.any { marker -> contains(marker) || endsWith(marker) }
+    }
 
     @Test
     fun `infrastructure layer does not import presentation layer`() {
         checkNoUpwardImport(
-            sourceLayerCheck = String::isInfrastructure,
-            bannedTargetCheck = String::isPresentation,
+            sourceLayerCheck = isInfrastructure,
+            bannedTargetCheck = isPresentation,
             ruleName = "infrastructure → presentation",
         )
     }
@@ -46,8 +56,8 @@ class NoUpwardLayerDependencyRule {
     @Test
     fun `application layer does not import presentation layer`() {
         checkNoUpwardImport(
-            sourceLayerCheck = String::isApplication,
-            bannedTargetCheck = String::isPresentation,
+            sourceLayerCheck = isApplication,
+            bannedTargetCheck = isPresentation,
             ruleName = "application → presentation",
         )
     }
@@ -55,8 +65,8 @@ class NoUpwardLayerDependencyRule {
     @Test
     fun `domain layer does not import application layer`() {
         checkNoUpwardImport(
-            sourceLayerCheck = String::isDomain,
-            bannedTargetCheck = String::isApplication,
+            sourceLayerCheck = isDomain,
+            bannedTargetCheck = isApplication,
             ruleName = "domain → application",
         )
     }
@@ -64,8 +74,8 @@ class NoUpwardLayerDependencyRule {
     @Test
     fun `domain layer does not import infrastructure layer`() {
         checkNoUpwardImport(
-            sourceLayerCheck = String::isDomain,
-            bannedTargetCheck = String::isInfrastructure,
+            sourceLayerCheck = isDomain,
+            bannedTargetCheck = isInfrastructure,
             ruleName = "domain → infrastructure",
         )
     }
@@ -73,8 +83,8 @@ class NoUpwardLayerDependencyRule {
     @Test
     fun `domain layer does not import presentation layer`() {
         checkNoUpwardImport(
-            sourceLayerCheck = String::isDomain,
-            bannedTargetCheck = String::isPresentation,
+            sourceLayerCheck = isDomain,
+            bannedTargetCheck = isPresentation,
             ruleName = "domain → presentation",
         )
     }
@@ -99,9 +109,10 @@ class NoUpwardLayerDependencyRule {
                 import.name.bannedTargetCheck()
             }
             .forEach { file ->
-                val offending = file.imports
-                    .filter { it.name.bannedTargetCheck() }
-                    .map { it.name }
+                val offending =
+                    file.imports
+                        .filter { it.name.bannedTargetCheck() }
+                        .map { it.name }
 
                 assert(false) {
                     "ARCHITECTURE VIOLATION (ADR-009): Forbidden dependency [$ruleName] " +
@@ -116,11 +127,10 @@ class NoUpwardLayerDependencyRule {
  * Negative test — confirms the rule detects an upward dependency in a fixture.
  */
 class NoUpwardLayerDependencyRuleNegativeTest {
-
     @Test
     fun `detector flags domain package importing from application package`() {
         val sourcePackage = "io.nemopill.scheduling.domain"
-        val bannedImport  = "io.nemopill.scheduling.application.SomeUseCase"
+        val bannedImport = "io.nemopill.scheduling.application.SomeUseCase"
 
         val isDomain = sourcePackage.contains(".domain.") || sourcePackage.endsWith(".domain")
         val isApplication = bannedImport.contains(".application.") || bannedImport.endsWith(".application")

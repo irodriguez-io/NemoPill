@@ -1,7 +1,6 @@
 package io.nemopill.core.konsist
 
 import com.lemonappdev.konsist.api.Konsist
-import com.lemonappdev.konsist.api.ext.list.withImport
 import org.junit.Test
 
 /**
@@ -21,14 +20,14 @@ import org.junit.Test
  * `.application` sub-packages.
  */
 class NoCrossFeatureDomainImportRule {
-
     // Feature roots that are subject to isolation (app and core are exempt).
-    private val featureRoots = listOf(
-        "io.nemopill.medicationmanagement",
-        "io.nemopill.scheduling",
-        "io.nemopill.notifications",
-        "io.nemopill.adherencetracking",
-    )
+    private val featureRoots =
+        listOf(
+            "io.nemopill.medicationmanagement",
+            "io.nemopill.scheduling",
+            "io.nemopill.notifications",
+            "io.nemopill.adherencetracking",
+        )
 
     @Test
     fun `feature modules do not import each other's domain or application packages`() {
@@ -42,23 +41,25 @@ class NoCrossFeatureDomainImportRule {
             }
             .forEach { file ->
                 val filePackage = file.packagee?.name ?: return@forEach
-                val sourceRoot = featureRoots.firstOrNull { filePackage.startsWith(it) }
-                    ?: return@forEach // file is in core, app, or another exempt root
+                val sourceRoot =
+                    featureRoots.firstOrNull { filePackage.startsWith(it) }
+                        ?: return@forEach // file is in core, app, or another exempt root
 
-                val violations = file.imports
-                    .map { it.name }
-                    .filter { importName ->
-                        // Target must be in a DIFFERENT feature root
-                        val targetRoot = featureRoots.firstOrNull { importName.startsWith(it) }
-                        targetRoot != null && targetRoot != sourceRoot
-                    }
-                    .filter { importName ->
-                        // Only flag domain and application sub-packages
-                        importName.contains(".domain.") ||
-                            importName.contains(".domain") ||
-                            importName.contains(".application.") ||
-                            importName.contains(".application")
-                    }
+                val violations =
+                    file.imports
+                        .map { it.name }
+                        .filter { importName ->
+                            // Target must be in a DIFFERENT feature root
+                            val targetRoot = featureRoots.firstOrNull { importName.startsWith(it) }
+                            targetRoot != null && targetRoot != sourceRoot
+                        }
+                        .filter { importName ->
+                            // Only flag domain and application sub-packages
+                            importName.contains(".domain.") ||
+                                importName.contains(".domain") ||
+                                importName.contains(".application.") ||
+                                importName.contains(".application")
+                        }
 
                 assert(violations.isEmpty()) {
                     "ARCHITECTURE VIOLATION (ADR-009): Feature module [$sourceRoot] " +
@@ -74,17 +75,17 @@ class NoCrossFeatureDomainImportRule {
  * Negative test — confirms the cross-feature detector identifies a violation.
  */
 class NoCrossFeatureDomainImportRuleNegativeTest {
-
     @Test
     fun `detector flags scheduling module importing from medication-management domain`() {
-        val featureRoots = listOf(
-            "io.nemopill.medicationmanagement",
-            "io.nemopill.scheduling",
-            "io.nemopill.notifications",
-            "io.nemopill.adherencetracking",
-        )
+        val featureRoots =
+            listOf(
+                "io.nemopill.medicationmanagement",
+                "io.nemopill.scheduling",
+                "io.nemopill.notifications",
+                "io.nemopill.adherencetracking",
+            )
 
-        val filePackage  = "io.nemopill.scheduling.application"
+        val filePackage = "io.nemopill.scheduling.application"
         val fixtureImport = "io.nemopill.medicationmanagement.domain.Medication"
 
         val sourceRoot = featureRoots.firstOrNull { filePackage.startsWith(it) }

@@ -729,3 +729,27 @@ Each rule file includes both a positive test class (scopes real project) and a n
 **QA** — in a new conversation, review the T-006 deliverables against `_context/08_active_task_packet.md § Tests To Add First`, `_context/05 § Test Portfolio` (architecture-conformance row), and the six Konsist rule files. Confirm `Coverage Sufficient` verdict. If sufficient, yield to **Human gatekeeper** (Isidro) to review the implementation and authorize T-007.
 
 Alternatively: **Human gatekeeper** may choose to skip formal QA for this infrastructure-only task and proceed directly to T-007 PM-refresh.
+
+## 2026-05-26T00:00:00Z — Project Manager — T-007 task packet refresh
+
+- **Outcome:** `_context/08_active_task_packet.md` refreshed from T-006 complete state to **T-007**, the final M-001 task slice. T-007 wires the coverage tool (Kover), test-runtime infrastructure (Robolectric + Roborazzi), and the two remaining CI stages (`unit-integration-ui-snapshot`, `coverage`), completing M-001 Done When items (4) and (7). `_context/07_delivery_plan_and_milestones.md` M-001 `Status` flipped from `Planned` to `Active` to reflect that M-001 implementation work began at T-006 execution (2026-05-25).
+- **Files written:** `_context/08_active_task_packet.md` (replaced — T-006 content fully superseded by T-007 content; `Task status: Ready for proposal`); `_context/07_delivery_plan_and_milestones.md` (amended — M-001 `Status: Planned → Active`); `_context/handoff_log.md` (this entry appended). No edits to `_context/09_decision_log.md` or any other `_context/` file; per ADR-039, PM-refresh turns produce no new ADRs.
+- **Validator result:** `bash _framework/validate_framework.sh` exits zero — confirmed against the T-006 baseline (no new framework file changes introduced by this PM refresh).
+- **T-006 close state inherited:**
+  - T-006 executed 2026-05-25 per Developer handoff entry: six-module Gradle scaffolding, six Konsist rules, pre-commit hook, and six-stage CI workflow all written and CI-verified.
+  - ADR-073 (T-006 Foundation scaffolding conventions), ADR-074 (FLAG\_IMMUTABLE text-scan heuristic), ADR-075 (package path `io.nemopill.core.konsist`) prepended to `_context/09_decision_log.md` at T-006 close.
+  - M-001 Done When items satisfied at T-006: (1) assembleDebug ✅, (2) ./gradlew test ✅, (3) Konsist ✅, (5) pre-commit hook ✅, (6) validator ✅. Items (4) and (7) remain open.
+  - ADR-075 correction: `_context/08_active_task_packet.md` referenced `com.nemopill.core.konsist` — a transcription error. T-007 packet uses `io.nemopill.core.konsist` throughout per ADR-075.
+- **T-007 scope decisions (recorded here for the handoff trail):**
+  - **Kover and Robolectric are already cataloged** (`libs.versions.toml` has `kover = "0.8.3"` and `robolectric = "4.14.1"`), making T-007 primarily a `build.gradle.kts` wiring and CI-stage authoring task.
+  - **Roborazzi is not yet in the version catalog.** Developer role selects the exact `1.7.x` version at execution time and records it as a T-007-close ADR.
+  - **ADR-049 two Konsist rules remain deferred** with a conditional assessment: if any `throw` statement or Domain-layer `data class` has landed by T-007 execution time (unlikely given the three-conversation pattern and empty source sets), wire the applicable rule immediately; otherwise, record the deferral routing in the T-007 handoff entry.
+  - **T-007 is the final M-001 task.** Its close handoff assembles the seven-item Done When evidence package and routes to the Human gatekeeper for M-001 milestone sign-off, which opens M-002 reviewable scope and the first walking-skeleton PM refresh.
+- **Open questions / items deferred (do not re-litigate):**
+  - **KSP plugin switch for Room/Hilt** — deferred to the first M-002 task that authors a Hilt `@Module`. T-007 does not touch `annotationProcessor` declarations.
+  - **ADR-045 Room schema Konsist rules** — deferred to M-003 where the first `@Database` lands.
+  - **ADR-059 TokenLiteralRules** — deferred to M-003 where the first Compose screen lands.
+  - **Gradle wrapper JAR** (`_source/gradle/wrapper/gradle-wrapper.jar`) — developer-onboarding prerequisite; not a T-007 deliverable; documented in T-007 handoff entry.
+  - **Branch protection required-checks expansion** (add `unit-integration-ui-snapshot` and `coverage`) — manual Human gatekeeper action at T-007 close, analogous to T-006.
+- **ADR candidates surfaced in this turn:** none. PM-refresh turns produce no new ADRs per ADR-039. T-007 execution turn is expected to surface: Kover 0.8.x threshold configuration pattern; Robolectric 4.14.1 with `includeAndroidResources = true`; Roborazzi version selection; ADR-049 routing convention (if it crystallizes as a durable rule).
+- **Next role:** Human gatekeeper (Isidro) — in a **new conversation**, review the T-007 packet, optionally edit, and flip `Task status` to `Approved for apply`. Then a third conversation invokes Developer-role execution against the approved packet. Per CLAUDE.md's "One File Per Conversation" rule, end this conversation now.
