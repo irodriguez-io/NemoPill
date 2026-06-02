@@ -26,7 +26,7 @@ tags        = ["android", "credentials"]
 id          = "gradle-signing-config-secret"
 description = "Hardcoded signing credential in Gradle build file"
 regex       = '''(?i)(storeFile|storePassword|keyAlias|keyPassword)\s*=\s*["\']?[^\s"\']+'''
-paths       = ["**/*.gradle", "**/*.gradle.kts", "**/gradle.properties"]
+paths       = ['''.*\.gradle$''', '''.*\.gradle\.kts$''', '''.*/gradle\.properties$''']
 tags        = ["gradle", "signing", "secret"]
 
 [[rules]]
@@ -47,10 +47,10 @@ regexes     = [
 # Paths that are entirely excluded from scanning.
 paths = [
     # Gradle wrapper jar is a binary — not a secret source.
-    "gradle/wrapper/gradle-wrapper.jar",
+    '''gradle/wrapper/gradle-wrapper\.jar''',
     # Test fixture files intentionally contain "bad" patterns for negative tests.
-    "**/fixtures/**",
+    '''.*/fixtures/.*''',
     # Build output directories.
-    "**/build/**",
-    "**/.gradle/**",
+    '''.*/build/.*''',
+    '''.*\.gradle/.*''',
 ]

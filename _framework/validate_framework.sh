@@ -10,10 +10,6 @@
 
 set -euo pipefail
 
-if ! command -v rg >/dev/null 2>&1; then
-  printf 'Missing required dependency: rg (ripgrep)\n' >&2
-  exit 1
-fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
@@ -77,35 +73,35 @@ for file in "${optional_files[@]}"; do
   fi
 done
 
-placeholder_hits="$(rg -n '\{\{(REQUIRED|OPTIONAL|EXAMPLE):' "${scan_files[@]}" || true)"
+placeholder_hits="$(grep -En '\{\{(REQUIRED|OPTIONAL|EXAMPLE):' "${scan_files[@]}" || true)"
 if [[ -n "$placeholder_hits" ]]; then
   printf 'Unresolved placeholders detected in _context/ files:\n' >&2
   printf '%s\n' "$placeholder_hits" >&2
   fail=1
 fi
 
-if ! rg -n '08_active_task_packet\.md' CLAUDE.md >/dev/null 2>&1; then
+if ! grep -n '08_active_task_packet\.md' CLAUDE.md >/dev/null 2>&1; then
   printf 'CLAUDE.md must reference 08_active_task_packet.md as the active task contract\n' >&2
   fail=1
 fi
 
-if ! rg -n '01_product_vision_and_scope\.md' CLAUDE.md >/dev/null 2>&1 \
-   || ! rg -n '09_decision_log\.md' CLAUDE.md >/dev/null 2>&1; then
+if ! grep -n '01_product_vision_and_scope\.md' CLAUDE.md >/dev/null 2>&1 \
+   || ! grep -n '09_decision_log\.md' CLAUDE.md >/dev/null 2>&1; then
   printf 'CLAUDE.md must route Claude through 01 through 09\n' >&2
   fail=1
 fi
 
-if ! rg -n 'Approved for apply' CLAUDE.md >/dev/null 2>&1; then
+if ! grep -n 'Approved for apply' CLAUDE.md >/dev/null 2>&1; then
   printf 'CLAUDE.md must document the "Approved for apply" gate\n' >&2
   fail=1
 fi
 
-if ! rg -n '^\| Task status \|' "$context_dir/08_active_task_packet.md" >/dev/null 2>&1; then
+if ! grep -Fn '| Task status |' "$context_dir/08_active_task_packet.md" >/dev/null 2>&1; then
   printf 'Missing authoritative "Task status" row in %s/08_active_task_packet.md\n' "$context_dir" >&2
   fail=1
 fi
 
-active_task_count="$(rg -c '^\| Task status \|' "$context_dir/08_active_task_packet.md" || true)"
+active_task_count="$(grep -Fc '| Task status |' "$context_dir/08_active_task_packet.md" || true)"
 if [[ "$active_task_count" != "1" ]]; then
   printf '%s/08_active_task_packet.md must contain exactly one active task (found %s)\n' \
     "$context_dir" "$active_task_count" >&2
