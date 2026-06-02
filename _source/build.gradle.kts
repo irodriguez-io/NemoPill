@@ -12,7 +12,10 @@ plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.ktlint) apply false
-    alias(libs.plugins.kover) apply false
+    // Kover applied to root (not `apply false`) so the `kover()` dependency
+    // configuration DSL accessor is available in the root dependencies block below.
+    // Submodules still apply it independently via their own plugins {} blocks.
+    alias(libs.plugins.kover)
 }
 
 // ---------------------------------------------------------------------------
@@ -50,13 +53,9 @@ tasks.named("build") {
 
 // ---------------------------------------------------------------------------
 // Kover multi-module aggregation (ADR-044 / T-007)
-// The plugin is declared `apply false` above so submodules can apply it
-// independently. Here we apply it again at the root for aggregation and
-// declare every submodule as a kover() dependency so `./gradlew koverHtmlReport`
-// and `./gradlew koverVerify` run across the full project from root.
+// Declare every submodule as a kover() dependency so `./gradlew koverHtmlReport`
+// and `./gradlew koverVerify` aggregate coverage across the full project.
 // ---------------------------------------------------------------------------
-apply(plugin = "org.jetbrains.kotlinx.kover")
-
 dependencies {
     kover(project(":core"))
     kover(project(":medication-management"))
