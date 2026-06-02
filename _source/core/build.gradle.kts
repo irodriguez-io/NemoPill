@@ -24,4 +24,3 @@ dependencies {
     testImplementation(libs.konsist)
     testImplementation(libs.junit4)
 }
-

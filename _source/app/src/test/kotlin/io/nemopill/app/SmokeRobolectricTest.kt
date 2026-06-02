@@ -15,7 +15,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [26])
 class SmokeRobolectricTest {
-
     @Test
     fun smoke_robolectric_runner_resolves() {
         assertTrue(true)
