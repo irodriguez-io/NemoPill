@@ -20,7 +20,6 @@ import org.junit.Test
  *                  fires on a fixture file that contains a banned import.
  */
 class NoNetworkImportsRule {
-
     @Test
     fun `production code contains no network imports`() {
         val bannedPrefixes = listOf("java.net.", "okhttp3.", "retrofit2.")
@@ -38,11 +37,12 @@ class NoNetworkImportsRule {
                 bannedPrefixes.any { prefix -> import.name.startsWith(prefix) }
             }
             .forEach { file ->
-                val offendingImports = file.imports
-                    .filter { import ->
-                        bannedPrefixes.any { prefix -> import.name.startsWith(prefix) }
-                    }
-                    .map { it.name }
+                val offendingImports =
+                    file.imports
+                        .filter { import ->
+                            bannedPrefixes.any { prefix -> import.name.startsWith(prefix) }
+                        }
+                        .map { it.name }
 
                 assert(false) {
                     "SECURITY VIOLATION (ADR-021): ${file.path} contains banned " +
@@ -58,7 +58,6 @@ class NoNetworkImportsRule {
  * Negative test — confirms the rule fires when a banned import is present.
  */
 class NoNetworkImportsRuleNegativeTest {
-
     @Test
     fun `detector recognises java_net import as a violation`() {
         val bannedPrefixes = listOf("java.net.", "okhttp3.", "retrofit2.")
