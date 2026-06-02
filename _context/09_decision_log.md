@@ -20,6 +20,41 @@
 
 ## Current State
 
+### ADR-076: CI unblock hot-fix — restore missing `gradle-wrapper.jar` (8.10.2) out-of-band of T-007 scope; adopt solo-dev branch protection (Option A: zero required reviews, retain all CI status checks)
+
+- Date: 2026-06-01
+- Status: Accepted
+- Owners: Isidro Rodriguez (Human gatekeeper, repo admin); Developer
+- Related milestone or task: T-007 (M-001 close); PR #1 (`task-007-design` → `main`, https://github.com/irodriguez-io/NemoPill/pull/1); `_context/08_active_task_packet.md § AC-007(iii)`; `_context/12_environments_and_devops.md` (branch-protection policy)
+
+#### Context
+
+PR #1 is `BLOCKED` for two independent reasons surfaced during the T-007 push:
+
+1. **CI red.** The required `1 · Setup` check fails at `gradle/actions/wrapper-validation@v3` with "Expected to find at least 1 Gradle Wrapper JARs but got only 0." Root cause confirmed by inspection: `_source/gradle/wrapper/gradle-wrapper.jar` was never committed and is absent locally — only `gradle-wrapper.properties` (pinning Gradle 8.10.2) and `libs.versions.toml` are tracked under `_source/gradle/`. It is not a `.gitignore` issue (`.gitignore` excludes only `.DS_Store` and `.claude/settings.local.json`). Checks 2–6 declare `needs: setup`, so they SKIP rather than run.
+2. **Unmergeable review gate.** Classic branch protection on `main` sets `required_approving_review_count: 1` with `enforce_admins: true`. GitHub forbids a PR author approving their own PR, so for a solo developer with no second account the PR is structurally unmergeable, and `--admin` override is disabled by `enforce_admins`.
+
+The missing JAR was a **known, deliberately-deferred gap**: `_context/08_active_task_packet.md` AC-007(iii) records it as an "onboarding note, no resolution needed in T-007," and the T-007 packet scopes the branch-protection edit as a Human-gatekeeper action at milestone close — not Developer-role work. Resolving either inside T-007 therefore falls outside the approved task scope, triggering the CLAUDE.md scope/stop-condition.
+
+#### Decision
+
+The Human gatekeeper (Isidro Rodriguez), who is also repo admin, **explicitly authorized an out-of-band hot-fix** to unblock M-001 close, accepting that this work runs ahead of / outside the T-007 planned scope. Two decisions:
+
+1. **Restore the wrapper JAR now.** Add the official Gradle 8.10.2 `gradle-wrapper.jar` to `_source/gradle/wrapper/`, commit on `task-007-design`, and push. The source of truth is the official upstream JAR for tag `v8.10.2`; `wrapper-validation@v3` checksums it against the known-good registry, so any official 8.10.2 copy validates (the committed JAR's SHA-256 `2db75c40…448046` was cross-checked against Gradle's published `gradle-8.10.2-wrapper.jar.sha256` and matches exactly). This supersedes the AC-007(iii) "defer" note for the JAR specifically.
+
+   **Second root cause found during the fix:** `_source/gradlew` line 100 was corrupted — `CLASSPATH="\$APP_HOME/..."` escaped the `$`, so `$APP_HOME` never expanded and the JVM received a literal, non-existent classpath, failing with `ClassNotFoundException: org.gradle.wrapper.GradleWrapperMain` at the "Prime Gradle cache" step *after* wrapper validation passed. Restored to the canonical unquoted `CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar`. Both the missing JAR and the launcher corruption were required to get `1 · Setup` green.
+2. **Adopt Option A branch protection (solo-dev posture).** Set `required_pull_request_reviews.required_approving_review_count` to `0` on `main` while retaining all required status checks (the current six; the two new T-007 checks `unit-integration-ui-snapshot` and `coverage` are added at T-007 close per the packet). The CI gate is the real safety net; the human-review gate is decorative for a single-author repo, especially with `dismiss_stale_reviews: true`. Options B (sock-puppet second account), C (`enforce_admins: false` bypass), and D (migrate classic protection → Ruleset with bypass actor) were rejected for solo-dev use; D remains the preferred path if a second collaborator ever joins.
+
+#### Consequences
+
+- `_source/gradle/wrapper/gradle-wrapper.jar` becomes a tracked binary; `./gradlew --version` must print `Gradle 8.10.2` cleanly before re-push, and CI `1 · Setup` (and downstream 2–6) should go green.
+- `main` PRs merge as soon as CI is green, with no human approval required. The trade-off — losing the forced self-review-in-PR-view prompt — is accepted and mitigated by the multi-stage CI gate.
+- The branch-protection change is applied by the admin via `gh api -X PATCH repos/irodriguez-io/NemoPill/branches/main/protection/required_pull_request_reviews -f required_approving_review_count=0` (token `repo` scope is sufficient). It must be performed on the gatekeeper's machine; it cannot be executed from the agent sandbox.
+- `_context/12_environments_and_devops.md` should be updated to document the Option A branch-protection posture at T-007 close (Human-gatekeeper edit).
+- This ADR is the audit record that the JAR restoration and protection change were a consciously-approved hot-fix executed out-of-sync with the T-007 task plan; the T-007 close handoff entry in `_context/handoff_log.md` should reference ADR-076 in place of the original AC-007(iii) "deferred" disposition.
+
+---
+
 ### ADR-075: Konsist package path — `io.nemopill.core.konsist` adopted; `_context/08` typo noted
 
 - Date: 2026-05-25
