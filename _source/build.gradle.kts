@@ -1,6 +1,11 @@
 import org.gradle.api.tasks.Copy
 
 plugins {
+    // The `base` plugin provides the root project's lifecycle tasks
+    // (build / clean / assemble / check). Without it the root has no
+    // `build` task, so `tasks.named("build")` below fails at configuration
+    // time — which broke `1 · Setup` (`./gradlew help --configuration-cache`).
+    base
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
