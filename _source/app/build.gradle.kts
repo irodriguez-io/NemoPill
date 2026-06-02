@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.kover)
 }
 
 android {
@@ -48,6 +49,12 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -76,6 +83,13 @@ dependencies {
     implementation(libs.compose.material3)
 
     testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
+    // Roborazzi snapshot infrastructure (AC-004 / T-007).
+    // BOM applied on test classpath to align Compose transitive deps from roborazzi-compose.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+
     androidTestImplementation(libs.junit.ext)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)

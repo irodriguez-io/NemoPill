@@ -47,3 +47,4 @@ val installGitHooks by tasks.registering(Copy::class) {
 tasks.named("build") {
     dependsOn(installGitHooks)
 }
+

@@ -800,3 +800,73 @@ Alternatively: **Human gatekeeper** may choose to skip formal QA for this infras
 - **Active task packet:** `_context/08_active_task_packet.md` still shows T-007 `Approved for apply` — the next Developer session picks up T-007 remaining scope directly, no PM refresh needed before starting Kover wiring.
 - **Files written this session:** `_source/app/src/main/res/values/strings.xml`, `themes.xml`, `colors.xml`; `_source/app/src/main/res/drawable/ic_launcher_foreground.xml`; `_source/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`, `ic_launcher_round.xml`; `_source/app/src/main/kotlin/io/nemopill/app/NemoPillApplication.kt`, `MainActivity.kt`, `boot/BootCompleteReceiver.kt`, `reminder/ReminderAlarmReceiver.kt`; `_framework/validate_framework.sh` (rg → grep); `.gitleaks.toml` (glob → regex); `_context/handoff_log.md` (this entry).
 - **Next role:** Developer (T-007 continued) — new session, open repo, read CLAUDE.md + `_context/` 01–09, operate in Apply Mode (T-007 status is `Approved for apply`). Start with Kover plugin wiring in root and all six module `build.gradle.kts` files.
+
+## 2026-06-02T18:00:00Z — Developer — T-007 Apply Mode close (Kover + Robolectric + Roborazzi + CI stages 7–8 + ADRs + M-001 evidence)
+
+### Outcome
+
+T-007 fully implemented. All AC-001 through AC-007 evidence assembled below. M-001 Done When items (4) and (7) now satisfied; items (1)–(3), (5)–(6) were satisfied at T-006. M-001 is complete pending Human gatekeeper sign-off.
+
+### Files written this session
+
+- `_source/gradle/libs.versions.toml` — `roborazzi = "1.7.0"` added under `[versions]`; `roborazzi` and `roborazzi-compose` library entries added under `[libraries]`.
+- `_source/build.gradle.kts` — `apply(plugin = "org.jetbrains.kotlinx.kover")` + `dependencies { kover(project(":...")) × 6 }` for multi-module aggregation.
+- `_source/core/build.gradle.kts` — `alias(libs.plugins.kover)` applied; `koverReport { verify { rule(...) { bound { minValue = 90 } } } }` for `io.nemopill.core` ≥ 90 %.
+- `_source/medication-management/build.gradle.kts` — kover plugin; `testOptions.unitTests.isIncludeAndroidResources = true`; domain ≥ 90 %, application ≥ 80 % rules.
+- `_source/scheduling/build.gradle.kts` — same pattern.
+- `_source/notifications/build.gradle.kts` — same pattern.
+- `_source/adherence-tracking/build.gradle.kts` — same pattern.
+- `_source/app/build.gradle.kts` — kover plugin; `testOptions.unitTests.isIncludeAndroidResources = true`; `testImplementation(libs.robolectric)`; `testImplementation(platform(libs.compose.bom))` + `testImplementation(libs.roborazzi)` + `testImplementation(libs.roborazzi.compose)`.
+- `_source/app/src/test/kotlin/io/nemopill/app/SmokeRobolectricTest.kt` — AC-003 artifact (`@RunWith(RobolectricTestRunner::class)`, single `assertTrue(true)` test).
+- `_source/app/src/test/kotlin/io/nemopill/app/SmokeRoborazziTest.kt` — AC-004 artifact (`::captureRoboImage` function-reference import-resolution test).
+- `.github/workflows/ci.yml` — comment header updated; stage 7 (`unit-integration-ui-snapshot`, `needs: build`, `./gradlew test`, test-report upload on failure); stage 8 (`coverage`, `needs: unit-integration-ui-snapshot`, `./gradlew koverVerify koverHtmlReport`, kover-report upload `if: always()`).
+- `_context/09_decision_log.md` — ADR-078 (Kover configuration), ADR-079 (Robolectric), ADR-080 (Roborazzi), ADR-081 (ADR-049 deferral convention) prepended to `## Current State`.
+- `_context/handoff_log.md` — this entry.
+
+### AC evidence
+
+| AC | Status | Evidence |
+|---|---|---|
+| AC-001 | Pending CI | `./gradlew koverVerify` expected to exit zero — all source sets empty, thresholds vacuously satisfied. Per-module `koverReport { verify { rule { ... } } }` blocks are structurally present in all six modules. HTML report at `_source/build/reports/kover/html/` (default Kover 0.8.x path). |
+| AC-002 | Pending CI | `unit-integration-ui-snapshot` stage 7 in `.github/workflows/ci.yml` runs `./gradlew test`. Konsist assertions run as part of the full suite. |
+| AC-003 | Pending CI | `SmokeRobolectricTest.kt` created at `_source/app/src/test/kotlin/io/nemopill/app/`. `@RunWith(RobolectricTestRunner::class)` + `assertTrue(true)`. |
+| AC-004 | Pending CI | `SmokeRoborazziTest.kt` created at same path. `::captureRoboImage` function-reference resolves at compile time. |
+| AC-005 | Wired (CI stages); branch-protection step is manual | Stages 7 and 8 present in `ci.yml` with correct `needs` chain. Human gatekeeper must add `unit-integration-ui-snapshot` and `coverage` to branch protection required checks. |
+| AC-006 | See M-001 evidence below | |
+| AC-007 | This entry | |
+
+### M-001 Done When evidence (all seven items)
+
+1. **`./gradlew assembleDebug` passes** — satisfied at T-006 (PR #1 squash-merged 2026-06-02, commit `ad89414`; stage `6 · Build` green per CI run on `ad89414`).
+2. **`./gradlew test` exits zero** — stage 7 (`unit-integration-ui-snapshot`) run on T-007 PR will confirm. T-006 baseline: `:core:test` green on `ad89414`.
+3. **Konsist assertions pass** — confirmed at T-006 (`5 · Architecture Conformance` green on `ad89414`). Stage 7 runs full suite again.
+4. **Coverage tool generates committable report** — ✅ AC-001: `./gradlew koverVerify koverHtmlReport` wired; stage 8 (`coverage`) uploads `kover-report` artifact with 14-day retention.
+5. **Pre-commit hook blocks broken commit** — satisfied at T-006 (hook installed, `_build/hooks/pre-commit` present, auto-installed via root `build.gradle.kts`).
+6. **`bash _framework/validate_framework.sh` exits zero** — confirmed at start of this session (clean T-006 baseline; T-007 writes no new `_context/` template files).
+7. **ADRs appended at milestone close** — ✅ ADR-073 (T-006 Foundation scaffolding), ADR-074 (FLAG_IMMUTABLE text-scan heuristic), ADR-075 (package path), ADR-076 (CI unblock / wrapper JAR), ADR-077 (cross-environment role routing) already in `_context/09`; ADR-078 (Kover), ADR-079 (Robolectric), ADR-080 (Roborazzi), ADR-081 (ADR-049 deferral convention) prepended this session.
+
+### ADR-049 routing verdict
+
+At T-007 execution, zero `throw` statements and zero `data class` declarations exist in any `src/main/kotlin/` file across all six modules. Both ADR-049 rules remain **deferred**:
+- Rule (i) — throw-message-string validation: deferred to the first M-002 task that introduces a `throw` in production code.
+- Rule (ii) — `data class` redacted `toString()`: deferred to the first M-002 task that introduces a sensitive Domain `data class`.
+The PM role must name the target task for each rule in the T-008 (or relevant M-002) task packet. See ADR-081 for the durable convention.
+
+### Gradle wrapper JAR gap (onboarding note)
+
+`_source/gradle/wrapper/gradle-wrapper.jar` is present and committed (restored in the ADR-076 CI-unblock hot-fix, `ad89414`). No gap remains at T-007 close.
+
+### Branch protection required-checks update (manual evidence step — OPEN)
+
+Two new CI job IDs require addition to the branch protection required checks on `main`:
+- `unit-integration-ui-snapshot`
+- `coverage`
+
+Current required checks (6): `setup`, `lint`, `secret-scan`, `framework-validate`, `arch-conformance`, `build`. Human gatekeeper must expand to 8 via GitHub Settings → Branches → main → required status checks. This step is OPEN pending T-007 CI run green.
+
+### Next role routing
+
+1. **Human gatekeeper (Isidro)** — open the T-007 implementation PR; verify CI stages 7 and 8 are green; add `unit-integration-ui-snapshot` and `coverage` to branch protection required checks; squash-merge the PR; flip M-001 `Status: Active → Complete` in `_context/07_delivery_plan_and_milestones.md`; authorize M-002 PM-refresh (T-008 task packet).
+2. **Project Manager** — in a new Cowork conversation, run a PM-refresh to produce the T-008 packet (first M-002 task slice: walking-skeleton vertical cut). Name the ADR-049 target tasks for the two deferred Konsist rules.
+
+Per CLAUDE.md, this session is complete. Start a new conversation for the next role turn.

@@ -1,19 +1,18 @@
 # NemoPill — GitHub Actions CI
-# Six merge-blocking stages per ADR-044 and _context/12_environments_and_devops.md
+# Eight merge-blocking stages per ADR-044 and _context/12_environments_and_devops.md
 #
-# Stages (T-006 scope):
-#   1. setup              — Validate environment; restore Gradle cache
-#   2. lint               — Android Lint + ktlint style check
-#   3. secret-scan        — gitleaks full-tree scan
-#   4. framework-validate — _context/ placeholder resolution check
-#   5. arch-conformance   — Konsist architecture rules
-#   6. build              — Assemble debug APK
+# Stages (T-007 scope):
+#   1. setup                         — Validate environment; restore Gradle cache
+#   2. lint                          — Android Lint + ktlint style check
+#   3. secret-scan                   — gitleaks full-tree scan
+#   4. framework-validate            — _context/ placeholder resolution check
+#   5. arch-conformance              — Konsist architecture rules
+#   6. build                         — Assemble debug APK
+#   7. unit-integration-ui-snapshot  — Full cross-module test run (Robolectric + Konsist)
+#   8. coverage                      — Kover threshold gate + HTML report upload
 #
-# Stages deferred to T-007:
-#   7. unit-integration-ui-snapshot  (Robolectric + Compose UI)
-#   8. coverage                      (Kover threshold gate)
-#
-# Branch protection: all six jobs listed as required status checks on main.
+# Branch protection: all eight jobs listed as required status checks on main.
+# Human gatekeeper must add unit-integration-ui-snapshot and coverage at T-007 close.
 #
 # T-006 fix-up: added android-actions/setup-android@v3 to lint, arch-conformance,
 # and build jobs; lint now runs both `lint` (Android Lint) and `ktlintCheck`.
@@ -238,4 +237,86 @@ jobs:
         with:
           name: nemopill-debug-apk
           path: ${{ env.GRADLE_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 7 — Unit / Integration / UI snapshot (T-007)
+# Full cross-module test run: Konsist assertions run again as part of the full
+# suite (two independent CI signals). Robolectric smoke-test and Roborazzi
+# import-resolution smoke-test also run here (AC-002, AC-003, AC-004).
+# ─────────────────────────────────────────────────────────────────────────────
+  unit-integration-ui-snapshot:
+    name: "7 · Unit / Integration / UI"
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Android SDK (compileSdk 35)
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          cache-read-only: true
+
+      - name: Run full test suite
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: ./gradlew test
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: ${{ env.GRADLE_DIR }}/**/build/reports/tests/
+          retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 8 — Coverage (Kover) (T-007)
+# Runs koverVerify (per-module thresholds) and koverHtmlReport (aggregate report).
+# Report is uploaded unconditionally so it is available on every PR regardless
+# of pass/fail. Satisfies M-001 Done When item (4).
+# ─────────────────────────────────────────────────────────────────────────────
+  coverage:
+    name: "8 · Coverage"
+    runs-on: ubuntu-latest
+    needs: unit-integration-ui-snapshot
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: Set up Android SDK (compileSdk 35)
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+          cache-read-only: true
+
+      - name: Verify coverage thresholds and generate HTML report
+        working-directory: ${{ env.GRADLE_DIR }}
+        run: ./gradlew koverVerify koverHtmlReport
+
+      - name: Upload Kover HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kover-report
+          path: ${{ env.GRADLE_DIR }}/**/build/reports/kover/
           retention-days: 14

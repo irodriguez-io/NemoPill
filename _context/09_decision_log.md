@@ -20,6 +20,128 @@
 
 ## Current State
 
+### ADR-081: ADR-049 Konsist code-surface-dependent rules deferred to task that introduces the relevant code surface; infrastructure-only tasks with empty source sets do not wire code-surface rules
+
+- Date: 2026-06-02
+- Status: Accepted
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-007 (M-001 close); `_context/08_active_task_packet.md § In Scope — Assess ADR-049`; `_context/09_decision_log.md ADR-049`
+
+#### Context
+
+ADR-049 defines two Konsist rules deferred from T-006: (i) no `throw` statement in production code uses Kotlin string templates or `String.format` / `StringBuilder.append` in its message argument; (ii) every Domain-layer `data class` must override `toString()` to a redacted form. At T-007 execution, a search of all `src/main/kotlin/` files across six modules finds zero `throw` statements and zero `data class` declarations. The T-007 scope includes four files in `:app::src/main/kotlin/` (MainActivity, NemoPillApplication, BootCompleteReceiver, ReminderAlarmReceiver) — none contain a `throw` or a `data class`. All feature modules and `:core` have empty production source sets. Wiring either rule now means writing a Konsist predicate that vacuously passes (no production classes to inspect), adding zero correctness value while permanently tying the rule's first real exercise to an infrastructure-only task that cannot demonstrate it.
+
+#### Decision
+
+Adopt the convention: **infrastructure-only tasks whose production source sets contain no relevant code surface defer the corresponding Konsist rule to the task that first introduces that code surface.** Applied to ADR-049:
+
+- Rule (i) (`throw`-message-string validation) — deferred to the first M-002 task that authors a `Result.Err.Unexpected` throw or any `throw` in production code. Expected: early M-002 use-case task.
+- Rule (ii) (`data class` redacted `toString()`) — deferred to the first M-002 task that introduces a sensitive Domain `data class` (Medication, Dose, or Schedule aggregate). Expected: M-002 or M-003 domain entity task.
+
+The target task for each rule must be named explicitly in that task's `_context/08_active_task_packet.md § In Scope` at PM-refresh time. If either rule is not wired by the task that introduces the relevant code surface, it becomes a blocker for QA's `Coverage Sufficient` verdict on that task.
+
+#### Consequences
+
+- ADR-049 rules remain unwired through T-007 close. The Konsist suite at M-001 close contains the six rules from T-006 plus zero new rules from T-007.
+- The PM role records the target task for each ADR-049 rule in the T-008 task packet as a named in-scope item.
+- Any future infrastructure-only task that defers a Konsist rule must record the target task explicitly in the handoff log — silent deferral without naming a target is not permitted by this convention.
+
+---
+
+### ADR-080: Roborazzi 1.7.0 selected as Compose snapshot test tool; `roborazzi-compose` BOM-aligned on `:app` test classpath; no snapshot captures at T-007 (import-resolution smoke-test only)
+
+- Date: 2026-06-02
+- Status: Accepted
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-007 (M-001 close); `_context/08_active_task_packet.md § In Scope — Wire Roborazzi`; `_context/12_environments_and_devops.md`; ADR-044
+
+#### Context
+
+ADR-044 named Roborazzi as the snapshot tool. T-007 wires it on the `:app` test classpath. The T-007 packet flagged the risk that `roborazzi-compose` depends on Compose UI and could cause resolution conflicts without a Compose BOM on the test classpath. The `:app` module already imports `implementation(platform(libs.compose.bom))` for its production source set but had no BOM import in `testImplementation`.
+
+Version selected: **Roborazzi 1.7.0** (latest stable in the 1.7.x family as of 2026-06-02). Artifacts: `io.github.takahirom.roborazzi:roborazzi:1.7.0` and `io.github.takahirom.roborazzi:roborazzi-compose:1.7.0`.
+
+#### Decision
+
+Wire both `roborazzi` and `roborazzi-compose` on `:app` `testImplementation` at version 1.7.0. Add `testImplementation(platform(libs.compose.bom))` to `:app` `dependencies` alongside the roborazzi entries to align Compose transitive dependencies and avoid version-resolution conflicts. No snapshot is captured at T-007 — the `SmokeRoborazziTest` class confirms the `captureRoboImage` import resolves on the classpath (AC-004) and is deleted or replaced in M-003 when the first Compose screen is authored.
+
+#### Consequences
+
+- `libs.versions.toml` gains `roborazzi = "1.7.0"` under `[versions]` and two library entries `roborazzi` and `roborazzi-compose` under `[libraries]`.
+- `:app::build.gradle.kts` gains `testImplementation(platform(libs.compose.bom))`, `testImplementation(libs.roborazzi)`, `testImplementation(libs.roborazzi.compose)`.
+- `SmokeRoborazziTest.kt` is the AC-004 artifact; it is a compile-only reference to `::captureRoboImage` with no real Compose render.
+- First real `captureRoboImage()` call, snapshot baseline commit, and 20-screen baseline in M-003 per `_context/05 § Snapshot baseline at 20`.
+
+---
+
+### ADR-079: Robolectric 4.14.1 as the Android unit-test runner; `includeAndroidResources = true` on all five Android modules; `:core` excluded (kotlin("jvm"))
+
+- Date: 2026-06-02
+- Status: Accepted
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-007 (M-001 close); `_context/08_active_task_packet.md § In Scope — Configure Robolectric`; ADR-044
+
+#### Context
+
+ADR-044 selected Robolectric as the Android unit-test runner. `robolectric = "4.14.1"` was already cataloged in `libs.versions.toml` at T-006. T-007 wires `testOptions.unitTests.isIncludeAndroidResources = true` in each Android module so the Robolectric runtime can resolve Android resources. T-006 had already added `testImplementation(libs.robolectric)` to `:medication-management`, `:scheduling`, `:notifications`, and `:adherence-tracking`; T-007 adds it to `:app`. `:core` uses `kotlin("jvm")` — no Android Gradle Plugin — so `RobolectricTestRunner` cannot resolve Android SDK classes there and `testOptions.unitTests` is not valid DSL.
+
+#### Decision
+
+- Apply `testOptions { unitTests { isIncludeAndroidResources = true } }` to `:medication-management`, `:scheduling`, `:notifications`, `:adherence-tracking`, and `:app`.
+- Add `testImplementation(libs.robolectric)` to `:app` (already present in the four feature modules from T-006).
+- Exclude `:core` from all Robolectric configuration.
+- `SmokeRobolectricTest.kt` in `:app::src/test/kotlin/io/nemopill/app/` is the AC-003 artifact; it is deleted or replaced in M-002 when the first real Robolectric test lands.
+
+#### Consequences
+
+- The Robolectric SDK jar download on cold CI runners adds 30–60 s to the `unit-integration-ui-snapshot` stage on first run; `gradle/actions/setup-gradle` caching mitigates on subsequent runs.
+- Tests annotated `@RunWith(RobolectricTestRunner::class)` can now be written in all five Android modules without additional dependency wiring.
+
+---
+
+### ADR-078: Kover 0.8.3 per-module threshold configuration; vacuous-pass convention for infrastructure-only tasks; no threshold on `:app`
+
+- Date: 2026-06-02
+- Status: Accepted
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-007 (M-001 close); `_context/08_active_task_packet.md § In Scope — Wire Kover`; `_context/05_engineering_quality_security_and_compliance.md § Coverage thresholds`; ADR-044
+
+#### Context
+
+ADR-044 selected Kover as the coverage tool. `org.jetbrains.kotlinx.kover:0.8.3` was already cataloged in `libs.versions.toml` and declared `apply false` in the root `build.gradle.kts`. T-007 applies the plugin per-module and configures thresholds.
+
+#### Decision
+
+**Plugin application:** `alias(libs.plugins.kover)` added to each of the six module `build.gradle.kts` files. Root `build.gradle.kts` additionally applies the plugin with `apply(plugin = "org.jetbrains.kotlinx.kover")` and declares all six modules as `kover()` dependencies for multi-module aggregation. `./gradlew koverHtmlReport` generates the merged HTML report at `build/reports/kover/html/` (default Kover output path = `_source/build/reports/kover/html/`).
+
+**Per-module thresholds (configured via `koverReport { verify { rule { ... } } }`):**
+
+| Module | Package filter | Threshold |
+|---|---|---|
+| `:core` | `io.nemopill.core` | ≥ 90 % line |
+| `:medication-management` | `io.nemopill.medicationmanagement.domain` | ≥ 90 % line |
+| `:medication-management` | `io.nemopill.medicationmanagement.application` | ≥ 80 % line |
+| `:scheduling` | `io.nemopill.scheduling.domain` | ≥ 90 % line |
+| `:scheduling` | `io.nemopill.scheduling.application` | ≥ 80 % line |
+| `:notifications` | `io.nemopill.notifications.domain` | ≥ 90 % line |
+| `:notifications` | `io.nemopill.notifications.application` | ≥ 80 % line |
+| `:adherence-tracking` | `io.nemopill.adherencetracking.domain` | ≥ 90 % line |
+| `:adherence-tracking` | `io.nemopill.adherencetracking.application` | ≥ 80 % line |
+| `:app` | — | No percentage threshold |
+
+No threshold on `*.infrastructure.*` or `*.presentation.*` subpackages per `_context/05 § Engineering Quality`. No threshold on `:app` because its coverage is owned by integration and snapshot rows.
+
+**Vacuous-pass convention:** all thresholds are vacuously satisfied at T-007 because all production source sets are empty. The first business code to land in M-002 will be the first real threshold measurement. The `koverVerify` task is expected to exit zero throughout T-007.
+
+#### Consequences
+
+- `./gradlew koverVerify` exits zero from root and per-module on a clean baseline.
+- `./gradlew koverHtmlReport` produces the merged HTML report; the `coverage` CI stage uploads it as `kover-report` artifact (14-day retention), satisfying M-001 Done When item (4).
+- Thresholds apply to named packages only; infrastructure and presentation layers are explicitly excluded from the coverage gate per `_context/05`.
+- If Kover 0.8.x `koverReport` DSL proves incompatible with a future AGP upgrade, this ADR is the baseline; a superseding ADR records the migration path.
+
+---
+
 ### ADR-077: Cross-environment role execution — Cowork hosts Architect / PM / Proposal-Mode turns; Claude Code hosts Apply-Mode Developer turns; `CLAUDE.md` remains the single environment-agnostic instruction surface and the file-based approval gate is authoritative in both
 
 - Date: 2026-06-01
