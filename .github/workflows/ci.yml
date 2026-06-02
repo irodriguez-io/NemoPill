@@ -318,5 +318,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kover-report
-          path: ${{ env.GRADLE_DIR }}/build/reports/kover/html/
+          path: ${{ env.GRADLE_DIR }}/**/build/reports/kover/
           retention-days: 14
