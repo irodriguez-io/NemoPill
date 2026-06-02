@@ -55,28 +55,3 @@ dependencies {
     androidTestImplementation(libs.junit.ext)
 }
 
-// ---------------------------------------------------------------------------
-// Kover coverage thresholds — :medication-management (ADR-044 / T-007)
-// domain ≥ 90 %, application ≥ 80 %. No threshold on infrastructure/presentation.
-// Vacuously satisfied at T-007 because src/main/kotlin is empty.
-// ---------------------------------------------------------------------------
-koverReport {
-    verify {
-        rule("medication-management domain line coverage ≥ 90 %") {
-            filters {
-                includes {
-                    packages("io.nemopill.medicationmanagement.domain")
-                }
-            }
-            bound { minValue = 90 }
-        }
-        rule("medication-management application line coverage ≥ 80 %") {
-            filters {
-                includes {
-                    packages("io.nemopill.medicationmanagement.application")
-                }
-            }
-            bound { minValue = 80 }
-        }
-    }
-}

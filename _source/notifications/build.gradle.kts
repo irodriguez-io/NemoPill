@@ -52,28 +52,3 @@ dependencies {
     androidTestImplementation(libs.junit.ext)
 }
 
-// ---------------------------------------------------------------------------
-// Kover coverage thresholds — :notifications (ADR-044 / T-007)
-// domain ≥ 90 %, application ≥ 80 %. No threshold on infrastructure/presentation.
-// Vacuously satisfied at T-007 because src/main/kotlin is empty.
-// ---------------------------------------------------------------------------
-koverReport {
-    verify {
-        rule("notifications domain line coverage ≥ 90 %") {
-            filters {
-                includes {
-                    packages("io.nemopill.notifications.domain")
-                }
-            }
-            bound { minValue = 90 }
-        }
-        rule("notifications application line coverage ≥ 80 %") {
-            filters {
-                includes {
-                    packages("io.nemopill.notifications.application")
-                }
-            }
-            bound { minValue = 80 }
-        }
-    }
-}

@@ -84,7 +84,7 @@ dependencies {
 
     testImplementation(libs.junit4)
     testImplementation(libs.robolectric)
-    // Roborazzi snapshot infrastructure — AC-004 (T-007).
+    // Roborazzi snapshot infrastructure (AC-004 / T-007).
     // BOM applied on test classpath to align Compose transitive deps from roborazzi-compose.
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.roborazzi)

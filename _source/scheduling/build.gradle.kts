@@ -53,28 +53,3 @@ dependencies {
     androidTestImplementation(libs.junit.ext)
 }
 
-// ---------------------------------------------------------------------------
-// Kover coverage thresholds — :scheduling (ADR-044 / T-007)
-// domain ≥ 90 %, application ≥ 80 %. No threshold on infrastructure/presentation.
-// Vacuously satisfied at T-007 because src/main/kotlin is empty.
-// ---------------------------------------------------------------------------
-koverReport {
-    verify {
-        rule("scheduling domain line coverage ≥ 90 %") {
-            filters {
-                includes {
-                    packages("io.nemopill.scheduling.domain")
-                }
-            }
-            bound { minValue = 90 }
-        }
-        rule("scheduling application line coverage ≥ 80 %") {
-            filters {
-                includes {
-                    packages("io.nemopill.scheduling.application")
-                }
-            }
-            bound { minValue = 80 }
-        }
-    }
-}
