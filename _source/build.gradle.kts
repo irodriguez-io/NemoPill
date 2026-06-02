@@ -47,3 +47,21 @@ val installGitHooks by tasks.registering(Copy::class) {
 tasks.named("build") {
     dependsOn(installGitHooks)
 }
+
+// ---------------------------------------------------------------------------
+// Kover multi-module aggregation (ADR-044 / T-007)
+// The plugin is declared `apply false` above so submodules can apply it
+// independently. Here we apply it again at the root for aggregation and
+// declare every submodule as a kover() dependency so `./gradlew koverHtmlReport`
+// and `./gradlew koverVerify` run across the full project from root.
+// ---------------------------------------------------------------------------
+apply(plugin = "org.jetbrains.kotlinx.kover")
+
+dependencies {
+    kover(project(":core"))
+    kover(project(":medication-management"))
+    kover(project(":scheduling"))
+    kover(project(":notifications"))
+    kover(project(":adherence-tracking"))
+    kover(project(":app"))
+}

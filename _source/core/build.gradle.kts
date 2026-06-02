@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.kover)
 }
 
 java {
@@ -22,4 +23,24 @@ dependencies {
     // of :core so it can inspect the entire project classpath from one place.
     testImplementation(libs.konsist)
     testImplementation(libs.junit4)
+}
+
+// ---------------------------------------------------------------------------
+// Kover coverage thresholds — :core (ADR-044 / T-007)
+// Threshold: ≥ 90 % line coverage on io.nemopill.core.* packages.
+// Vacuously satisfied at T-007 because src/main/kotlin is empty.
+// ---------------------------------------------------------------------------
+koverReport {
+    verify {
+        rule("core line coverage ≥ 90 %") {
+            filters {
+                includes {
+                    packages("io.nemopill.core")
+                }
+            }
+            bound {
+                minValue = 90
+            }
+        }
+    }
 }

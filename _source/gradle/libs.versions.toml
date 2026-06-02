@@ -31,6 +31,9 @@ compose-ui-test     = "1.7.6"
 # Architecture conformance
 konsist             = "0.17.0"
 
+# Snapshot testing
+roborazzi           = "1.7.0"
+
 # Code quality
 ktlint-gradle       = "12.1.1"
 kover               = "0.8.3"
@@ -77,6 +80,10 @@ mockk-android               = { group = "io.mockk",                  name = "moc
 
 # Architecture conformance
 konsist                     = { group = "com.lemonappdev",           name = "konsist",                   version.ref = "konsist" }
+
+# Snapshot testing
+roborazzi                   = { group = "io.github.takahirom.roborazzi", name = "roborazzi",             version.ref = "roborazzi" }
+roborazzi-compose           = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose",     version.ref = "roborazzi" }
 
 [plugins]
 android-application         = { id = "com.android.application",      version.ref = "agp" }
