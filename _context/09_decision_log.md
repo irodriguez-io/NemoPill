@@ -20,6 +20,44 @@
 
 ## Current State
 
+### ADR-077: Cross-environment role execution — Cowork hosts Architect / PM / Proposal-Mode turns; Claude Code hosts Apply-Mode Developer turns; `CLAUDE.md` remains the single environment-agnostic instruction surface and the file-based approval gate is authoritative in both
+
+- Date: 2026-06-01
+- Status: Proposed
+- Owners: Isidro Rodriguez (Human gatekeeper); Architect
+- Related milestone or task: No active task packet — operating-model decision recorded at the Human gatekeeper's request; `CLAUDE.md § Operating Modes`, `§ Multi-Agent Roles`, `§ Skills`; originates from the 2026-06-01 Cowork conversation on whether to migrate code-writing to Claude Code
+
+#### Context
+
+The project is currently driven from Claude Cowork. As M-001 implementation work scales up (T-006 delivered the six-module Gradle scaffold; T-007 is closing M-001), the Human gatekeeper asked whether the Developer role's code-writing should move to Claude Code instead of staying in Cowork. The two environments have different strengths: Cowork hosts the MCP connectors this project relies on for planning and traceability (Jira, Confluence, Slack, Figma, Trino/Athena) and is well-suited to document-centric Architect / PM turns and Proposal-Mode design; Claude Code offers a tighter edit → test → git loop better suited to the Apply-Mode Developer grind (multi-file edits, running the Gradle/Konsist/Robolectric suites, branch and PR operations). The risk in splitting environments is that the approval discipline could fragment if it depended on which tool was in use.
+
+#### Decision
+
+Role execution is split by environment, not migrated wholesale:
+
+1. **Cowork** hosts Architect and Project-Manager turns and all Proposal-Mode work — `/start-working` contextualization sessions, `_context/08_active_task_packet.md` refreshes, milestone slicing, ADR drafting, and handoff-log maintenance. This is where the connectors and document workflows live.
+2. **Claude Code**, opened at the repository root, hosts Apply-Mode Developer turns once a task packet is flipped to `Approved for apply` — file-heavy implementation in `_source/`, running the test suites, and git/PR operations.
+3. **`CLAUDE.md` is the single, environment-agnostic instruction surface.** Both environments read the same `CLAUDE.md`, honor the same `_context/` read order, write to the same `_context/handoff_log.md`, and respect the same file-based gate: `Approved for apply` in `_context/08_active_task_packet.md` plus explicit human approval is the only authorization for `_source/` mutation, regardless of which tool is open. The gate is a property of the repo state, not the environment.
+
+This decision codifies a routing convention; it does not change any role contract in `_context/14_agent_roles_and_handoffs.md` or any operating-mode rule in `CLAUDE.md`.
+
+#### Alternatives Considered
+
+- **Keep everything in Cowork** — viable and lowest-friction for small, few-file tasks; the cost of switching tools outweighs the tighter loop when implementation is light. Retained as the default for small Developer tasks; the Claude Code split is reserved for file-heavy or test-iteration-heavy work. Not chosen as the exclusive posture because the edit/test/git loop is slower here for large implementation slices.
+- **Migrate the whole project to Claude Code** — rejected. It would strip the planning roles of the MCP connectors that supply traceability (Jira/Confluence/Slack links cited throughout the ADR set) and weaken the document-centric Architect / PM workflow that the framework depends on.
+- **Make the approval gate environment-specific** (e.g., only Cowork may flip the gate) — rejected. The gate must be a single source of truth in repo state; tying it to an environment would create two divergent notions of "approved."
+
+#### Consequences
+
+- The edit → test → git feedback loop for large Apply-Mode slices tightens; Cowork retains the connector-backed planning surface.
+- Claude Code must be opened at the repository root so it auto-loads `CLAUDE.md` and discovers `.claude/` (skills and commands); otherwise the framework rules and the `/start-working` accelerator will not be in effect.
+- The split introduces a context-switch cost; the project accepts it only when implementation is file- or test-heavy, keeping small Developer tasks in Cowork.
+- `_context/handoff_log.md` remains the cross-session, cross-environment continuity record; every role turn in either environment appends a handoff entry as before.
+- `_context/14_agent_roles_and_handoffs.md` may be amended at a future PM/Architect turn to name the host environment per role for completeness; this ADR is the interim record.
+- Status is `Proposed`; the Human gatekeeper can ratify to `Accepted`. No `_source/` change is implied, so this does not itself require an `Approved for apply` flip.
+
+---
+
 ### ADR-076: CI unblock hot-fix — restore missing `gradle-wrapper.jar` (8.10.2) out-of-band of T-007 scope; adopt solo-dev branch protection (Option A: zero required reviews, retain all CI status checks)
 
 - Date: 2026-06-01
