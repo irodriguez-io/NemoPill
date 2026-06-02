@@ -5,5 +5,8 @@ import android.content.Context
 import android.content.Intent
 
 class ReminderAlarmReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = Unit
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) = Unit
 }
