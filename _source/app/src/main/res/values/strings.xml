@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NemoPill</string>
+
+    <!-- T-008 demo screen (M-002 walking-skeleton, scheduling leg) -->
+    <string name="schedule_demo_reminder">Schedule the Demo Reminder</string>
+    <string name="demo_reminder_idle">No reminder scheduled yet</string>
+    <string name="demo_reminder_scheduled">Reminder scheduled for %1$s</string>
+    <string name="demo_reminder_error">Could not schedule the reminder</string>
 </resources>

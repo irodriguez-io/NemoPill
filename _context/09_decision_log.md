@@ -20,6 +20,153 @@
 
 ## Current State
 
+### ADR-088: ktlint `standard:function-naming` suppressed per-`@Composable` (PascalCase Compose convention); repo-wide `.editorconfig` exemption deferred to the Compose-proliferation milestone
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — DemoScreen`; ADR-044 (ktlint)
+
+#### Context
+
+T-008 introduces the project's first Jetpack Compose function (`DemoScreen`). The ktlint `standard:function-naming` rule (bundled with ktlint-gradle 12.1.1) flags PascalCase function names and, in this version, does not auto-exempt `@Composable` functions. Compose UI functions conventionally use PascalCase, so the rule fires on every screen-level composable.
+
+#### Decision
+
+Suppress the rule locally with `@Suppress("ktlint:standard:function-naming")` plus a rationale comment on the `@Composable` function, rather than introducing a repo-wide `.editorconfig` now. Only one screen-level composable lands in T-008.
+
+#### Consequences
+
+Each future screen-level composable repeats the local suppression. When Compose screens proliferate (expected M-003 Medication CRUD), a single `.editorconfig` with `ktlint_function_naming_ignore_when_annotated_with = Composable` should replace the scattered suppressions — routed to that milestone. No effect on existing non-Compose files. Status Proposed pending the `.editorconfig` decision.
+
+---
+
+### ADR-087: ADR-049 routing at T-008 — rule (i) wired and exercised; rule (ii) deferred to the first sensitive Domain `data class`; `:core` `Result` scoping question surfaced for the rule-(ii) task
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — ADR-049 routing`; ADR-081; ADR-049; ADR-031
+
+#### Context
+
+ADR-081 deferred ADR-049's two Konsist rules to the tasks first introducing their code surfaces. T-008 lands the first production `throw` — the `ScheduleDemoReminderUseCase` boundary's `CancellationException` rethrow — which triggers rule (i). `DoseId` is a `@JvmInline value class`, not a `data class`, so it does not trigger rule (ii). However, `Result.Ok` and `Result.Err.Unexpected` are `:core` `data class`es, and ADR-049 rule (ii)'s literal scope is "every Domain-layer (`:domain`, `:core`) `data class`".
+
+#### Decision
+
+(i) Wire rule (i) now as `core/src/test/kotlin/io/nemopill/core/konsist/NoDynamicThrowMessageRule.kt` (with a negative test). It forbids string templates / `String.format` / `StringBuilder.append` in a production `throw` message argument — a line-level text-scan heuristic consistent with `PendingIntentFlagImmutableRule` (Konsist 0.17.0 cannot reliably parse throw-argument expressions). It passes (the rethrow carries no message; the use case's unexpected-failure message is a static `const`). (ii) Defer rule (ii) to the first task introducing a Patient-data-bearing Domain `data class` — expected the M-002 Dose-materialization slice (the `Dose` entity) or, failing that, the M-003 Medication CRUD slice (`Medication` / `DoseSchedule` / `Confirmation`).
+
+#### Consequences
+
+Rule (i) is live and CI-enforced (arch-conformance stage). Rule (ii) remains unwired with a named target task. Surfaced (not silently resolved) for the rule-(ii)-wiring task: ADR-049 rule (ii)'s "(:domain, :core)" scope would also match `:core`'s `Result.Ok` / `Result.Err.Unexpected` `data class`es, which carry **no** Patient data. That task must decide whether to (a) require a redacted `toString()` on those non-PII shared-kernel types too, or (b) scope rule (ii) to Patient-data-bearing feature-module Domain entities and explicitly exempt `:core`'s `Result` family. Status Proposed.
+
+---
+
+### ADR-086: Kover 0.8.3 per-package coverage gates via report-level `filters` (per-rule filters forbidden in 0.8.x); resolves the ADR-078 deferral; `:scheduling` infra/presentation excluded from the module coverage report
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — Activate Kover thresholds`; ADR-078; `_context/05 § Coverage thresholds`
+
+#### Context
+
+ADR-078 specified per-package Kover thresholds but its quoted DSL (`koverReport { verify { rule { ... } } }`) is the Kover 0.7.x form and could not be configured against empty source sets at T-007 (deferred — the actual `_source` build files carried no Kover config block). T-008 lands real code. Kover 0.8.x **forbids** per-rule `filters` (build error: "It is forbidden to override filters for a specific report, use custom report variants").
+
+#### Decision
+
+Configure each gated module with a report-level filter that scopes both the report and the verify gate: `kover { reports { filters { includes { classes("<pkg>.*") } } verify { rule("…") { bound { minValue = N } } } } }`. `:core` → `io.nemopill.core.*` ≥ 90 % line. `:scheduling` → `io.nemopill.scheduling.application.*` ≥ 80 % line. `:app` and the not-yet-implemented feature modules keep no percentage threshold. Gates run via `./gradlew koverVerify` (each module's own rule) and `koverHtmlReport`.
+
+#### Consequences
+
+Gates are real, non-vacuous, and met with margin (measured at T-008: `:core` 5/5 lines = 100 %; `:scheduling::application` 7/7 lines = 100 %). Because the filter is report-wide, `:scheduling`'s coverage *report* shows only the `application` package — `infrastructure.*` / `presentation.*` are excluded from the report entirely, not merely un-gated (they carry no `%` target per `_context/05` and are exercised by the Robolectric integration test). If future work needs to *report* infra/presentation coverage without *gating* it, migrate to Kover report variants. This resolves the ADR-078 deferral; ADR-078's per-module threshold intent stands, only its DSL form is superseded for 0.8.3. Status Proposed.
+
+---
+
+### ADR-085: `ReminderAlarmReceiver` relocated from `:app` to `:scheduling::infrastructure`
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope`; `_context/04 § :scheduling`; ADR-023
+
+#### Context
+
+file 04 places the alarm receiver in `:scheduling`. `AlarmManagerSchedulerAdapter` (in `:scheduling::infrastructure`) must reference the receiver class to construct its operation `PendingIntent`. Had the receiver stayed in `:app`, the adapter would need a `:scheduling → :app` dependency, which is illegal per the module graph (feature modules must not depend on `:app`).
+
+#### Decision
+
+Move the receiver to `io.nemopill.scheduling.infrastructure.ReminderAlarmReceiver`; delete the old `io.nemopill.app.reminder.ReminderAlarmReceiver`; repoint `:app`'s `AndroidManifest.xml` `<receiver>` to the new FQCN, keeping `android:exported="false"`. `onReceive` is a static-log no-op stub for T-008 (notification rendering is the next M-002 slice, item 3). `BootCompleteReceiver` — the one sanctioned `exported="true"` receiver — is untouched.
+
+#### Consequences
+
+The adapter references the receiver within its own module; no cross-module dependency violation. The receiver declaration stays in `:app`'s manifest (where `<application>` lives), addressed by FQCN; the merged manifest resolves the class through `:app`'s dependency on `:scheduling`. No new permissions; the receiver remains non-exported. Status Proposed.
+
+---
+
+### ADR-084: Demo scheduling-adapter design — `setAlarmClock`, idempotent request-code-by-`doseId`, `FLAG_IMMUTABLE` on every `PendingIntent`, runtime-resolved `showIntent`
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/04 § Exact-time scheduling / § SchedulerPort`; `_context/01` assumption (1); BR-004; ADR-023; ADR-031
+
+#### Context
+
+T-008's `AlarmManagerSchedulerAdapter` is the first real `SchedulerPort` implementation, retiring the Robolectric half of file 01 assumption (1) for the scheduling leg (M-002 Done-When item 1 + Robolectric half of item 2).
+
+#### Decision
+
+Use `AlarmManager.setAlarmClock(AlarmClockInfo(triggerAtMillis, showIntent), operation)` — the most reliable Doze bypass (file 04). The `operation` `PendingIntent` targets `ReminderAlarmReceiver` with a stable request code (`REQUEST_CODE_BASE + doseId.value.hashCode()`) and `FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT`, so re-scheduling the same `doseId` replaces rather than duplicates the alarm (BR-004 exactly-once; verified under `ShadowAlarmManager`). The optional `showIntent` is resolved at runtime from `packageManager.getLaunchIntentForPackage(packageName)` (wrapped immutable; `null` when unavailable, e.g. under the library test manifest) rather than referencing `:app`'s `MainActivity` — this preserves the `:scheduling`-must-not-import-`:app` boundary while still satisfying the "every `PendingIntent` is immutable" guardrail (ADR-023). `cancelAll()` cancels the single demo Dose (sufficient for the slice).
+
+#### Consequences
+
+Idempotency is the adapter's responsibility via the stable request code (BR-004). The `doseId` rides as an Intent extra — an aggregate ID only, ADR-031-compliant (no drug name / schedule / Confirmation history). Full multi-Dose cancellation, per-Dose request codes, and the boot re-arm path land with later M-002 slices. Status Proposed.
+
+---
+
+### ADR-083: KSP + Hilt Gradle plugin wiring; minimal placement — Hilt + KSP codegen in `:app` only; `:scheduling` carries the `hilt-android` library only
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — First Hilt + KSP DI graph`; `_context/04 § Dependency injection`; ADR-075
+
+#### Context
+
+T-008 stands up the project's first Hilt `@Module` and DI graph. The Hilt *libraries* (`hilt-android` / `hilt-compiler`) were cataloged at T-006; the KSP and Hilt Gradle *plugins* were absent. The packet flagged uncertainty over whether `:scheduling` — whose `@Inject`-constructor adapter and use case are consumed by `:app`'s `@Module` — needs its own Hilt + KSP, and instructed the Developer to confirm the minimal placement empirically.
+
+#### Decision
+
+Add `ksp = "2.1.0-1.0.29"` (matched exactly to the catalog's Kotlin 2.1.0) and the `com.google.dagger.hilt.android` (v2.51.1, reusing the existing `hilt` version) plugin aliases to `libs.versions.toml [plugins]`; declare both `apply false` in the root build; apply both in `:app` with `ksp(libs.hilt.compiler)`. `:scheduling` gets `implementation(libs.hilt.android)` **only** — no Hilt/KSP plugin. Empirically confirmed at execution: Dagger generates the `@Inject`-constructor factories (`AlarmManagerSchedulerAdapter`, `ScheduleDemoReminderUseCase`) inside `:app` from `:scheduling`'s *compiled* `@Inject` constructors (binary dependency), so `:app`-only codegen is sufficient. `@HiltAndroidApp` on `NemoPillApplication`, `@AndroidEntryPoint` on `MainActivity`, `@HiltViewModel` on `DemoViewModel`; the ViewModel is obtained via the activity `viewModels()` delegate, so `hilt-navigation-compose` is not required.
+
+#### Consequences
+
+`:app:kspDebugKotlin` + `hiltAggregateDeps*` + `hiltJavaCompile*` run cleanly across debug/release/test variants; `:app:assembleDebug` succeeds with no missing-binding errors. KSP1 (default for the `2.1.0-1.0.x` line) is compatible with Hilt 2.51.1. If a feature module later needs its own `@Module` / entry point / `@HiltViewModel`, Hilt + KSP is added to that module at that time. Status Proposed.
+
+---
+
+### ADR-082: Coroutines (1.10.1) and Truth (1.4.4) added to the version catalog
+
+- Date: 2026-06-05
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — catalog dependencies`; `_context/04 § Async/concurrency / § Testing toolchain`; `_context/05 § Dependency and supply chain`
+
+#### Context
+
+T-008's first Application use case is `suspend`; `DemoViewModel` drives it on `viewModelScope`; tests use `runTest` and Truth assertions per file 04 § Testing toolchain. None of coroutines or Truth were cataloged.
+
+#### Decision
+
+Add `coroutines = "1.10.1"` (pairs with Kotlin 2.1.0) with libraries `kotlinx-coroutines-core` / `-android` / `-test`, and `truth = "1.4.4"` with library `truth`. `:app` gets `kotlinx-coroutines-android` (viewModelScope); `:scheduling` gets `kotlinx-coroutines-test` + `truth` on its test classpath; `:core` gets `truth` (test). Coroutines is intentionally not added to `:scheduling` main — `suspend` and `CancellationException` come from `kotlin-stdlib`.
+
+#### Consequences
+
+Per `_context/05 § Dependency and supply chain`, this `libs.versions.toml` change is a Security-applicability / dependency-review event, recorded here with the one-line justification above. Verified against the merged manifest: none of these dependencies introduces a network or any new permission. Status Proposed.
+
+---
+
 ### ADR-081: ADR-049 Konsist code-surface-dependent rules deferred to task that introduces the relevant code surface; infrastructure-only tasks with empty source sets do not wire code-surface rules
 
 - Date: 2026-06-02

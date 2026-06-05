@@ -40,9 +40,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Alarm receiver — wakes app to fire dose reminders -->
+        <!-- Alarm receiver — wakes app to fire dose reminders.
+             Lives in :scheduling::infrastructure (file 04); referenced here by FQCN.
+             exported="false" — security guardrail (only BootCompleteReceiver is exported). -->
         <receiver
-            android:name=".reminder.ReminderAlarmReceiver"
+            android:name="io.nemopill.scheduling.infrastructure.ReminderAlarmReceiver"
             android:exported="false" />
 
         <!-- Boot receiver — reschedules alarms after device reboot (BR-009) -->
