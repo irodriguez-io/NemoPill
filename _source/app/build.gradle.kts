@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt.android)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.kover)
 }
@@ -74,7 +76,15 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.vm.ktx)
     implementation(libs.androidx.activity.compose)
+
+    // DI graph (T-008): Hilt runtime + KSP-driven codegen lives here (first @Module + entry points).
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Coroutines — viewModelScope drives the suspend use case off the demo screen.
+    implementation(libs.kotlinx.coroutines.android)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

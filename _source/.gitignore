@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+
+# Android / Kotlin build outputs
+*.iml
+captures/
+.cxx/
+
+# Local SDK / machine-specific config (also ignored at repo root)
+local.properties
+
+# OS noise
+.DS_Store
+
+# Note: .idea/ is intentionally version-controlled here (shared project config:
+# codeStyles, gradle.xml, misc.xml, vcs.xml, runConfigurations, etc.). Its volatile
+# files are managed by _source/.idea/.gitignore — do not broadly ignore .idea/.
