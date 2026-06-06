@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="Gradle: org.robolectric:nativeruntime:4.14.1" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="org.robolectric" artifactId="nativeruntime" version="4.14.1" baseVersion="4.14.1" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.robolectric/nativeruntime/4.14.1/1ecc7a9ab86c85526dda78244d8997d3f8e4bb30/nativeruntime-4.14.1.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.robolectric/nativeruntime/4.14.1/9366a3355e602e65091aa3831e0df0e42cf140c2/nativeruntime-4.14.1-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.robolectric/nativeruntime/4.14.1/93d6e35eeacb3b8b01b89eb13c84d2989dce8219/nativeruntime-4.14.1-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
