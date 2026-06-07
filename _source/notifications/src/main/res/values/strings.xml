@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  :notifications module string resources (T-009).
+
+  This module OWNS the notification surface (file 04 § :notifications), so its channel display
+  names and notification copy live in this module's resources and are referenced via
+  io.nemopill.notifications.R. A library module cannot read the :app R class (:app depends on
+  :notifications, not the reverse), so placing these in :app/strings.xml — as the T-009 packet's
+  "Likely Change Surface" line literally directs — would make them unreachable from this module's
+  builder/channel code without breaking the load-bearing :notifications-must-not-import-:app
+  boundary. Honoring the packet's INTENT (file 11: "no inline literals; sourced from string
+  resources") while respecting the module graph, the strings live here. Recorded as a T-009 ADR
+  and surfaced in the close handoff for gatekeeper ratification.
+
+  EN only in T-009; ES (values-es) bilingual authoring is M-006 (file 11 § Localization).
+  Copy is sentence case (file 11 § Capitalization); the title has no trailing period. The demo
+  placeholders are hardcoded non-PII content — no real medication name, dose, or time (ADR-031).
+-->
+<resources>
+
+    <!-- reminder_on_time channel (display name + description) — file 11 § Notification channel display names -->
+    <string name="notification_channel_reminder_on_time_name">Dose reminders</string>
+    <string name="notification_channel_reminder_on_time_description">Alerts at the time each dose is scheduled.</string>
+
+    <!-- On-time Reminder copy template — file 11 § notification copy ("Take {medication-name}" / "{dose} at {time}") -->
+    <string name="notification_reminder_on_time_title">Take %1$s</string>
+    <string name="notification_reminder_on_time_body">%1$s at %2$s</string>
+
+    <!-- Inline action labels — file 11 § Notification (inline action) -->
+    <string name="notification_action_take">Take</string>
+    <string name="notification_action_skip">Skip</string>
+
+    <!-- Hardcoded non-PII demo placeholders for the walking-skeleton notification (ADR-031) -->
+    <string name="demo_medication_name">your medication</string>
+    <string name="demo_dose_descriptor">1 pill</string>
+    <string name="demo_dose_time">8:00 AM</string>
+
+</resources>

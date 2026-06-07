@@ -7,6 +7,7 @@ import android.content.Intent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.nemopill.core.id.DoseId
 import io.nemopill.scheduling.DEMO_DOSE_ID
+import io.nemopill.scheduling.EXTRA_DOSE_ID
 import io.nemopill.scheduling.REQUEST_CODE_BASE
 import io.nemopill.scheduling.SHOW_INTENT_REQUEST_CODE
 import io.nemopill.scheduling.application.SchedulerPort
@@ -74,10 +75,5 @@ class AlarmManagerSchedulerAdapter
                 launch,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-        }
-
-        private companion object {
-            /** Aggregate ID only (ADR-031); the receiver reads it when notification rendering lands. */
-            const val EXTRA_DOSE_ID = "io.nemopill.scheduling.extra.DOSE_ID"
         }
     }

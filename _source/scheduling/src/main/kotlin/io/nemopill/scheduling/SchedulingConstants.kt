@@ -18,3 +18,11 @@ internal const val REQUEST_CODE_BASE: Int = 0x4E50
 
 /** Fixed request code for the AlarmClockInfo `showIntent` PendingIntent. */
 internal const val SHOW_INTENT_REQUEST_CODE: Int = 0x4E51
+
+/**
+ * Alarm-Intent extra carrying the aggregate [DoseId] only (ADR-031 — no Patient data in trigger
+ * metadata). Written by `AlarmManagerSchedulerAdapter`, read by `ReminderAlarmReceiver` at the
+ * entry point (file 06 § AlarmManager PendingIntent boundary). Shared so both sides agree on the
+ * key.
+ */
+internal const val EXTRA_DOSE_ID: String = "io.nemopill.scheduling.extra.DOSE_ID"

@@ -47,6 +47,15 @@
             android:name="io.nemopill.scheduling.infrastructure.ReminderAlarmReceiver"
             android:exported="false" />
 
+        <!-- Confirm-from-notification receiver — inline "Take" / "Skip" taps (T-009).
+             Lives in :notifications::infrastructure (file 04); referenced here by FQCN.
+             exported="false" — security guardrail (file 05 / THR-002): only the OS, holding our
+             FLAG_IMMUTABLE PendingIntent, can fire it. T-009 onReceive is a logging-and-dismiss
+             stub; the Confirmation write is T-010. -->
+        <receiver
+            android:name="io.nemopill.notifications.infrastructure.ConfirmFromNotificationReceiver"
+            android:exported="false" />
+
         <!-- Boot receiver — reschedules alarms after device reboot (BR-009) -->
         <receiver
             android:name=".boot.BootCompleteReceiver"
