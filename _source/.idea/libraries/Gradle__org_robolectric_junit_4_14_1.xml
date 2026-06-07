@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="Gradle: org.robolectric:junit:4.14.1" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="org.robolectric" artifactId="junit" version="4.14.1" baseVersion="4.14.1" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.robolectric/junit/4.14.1/fa7cb6a5385f4acb4b0af58ce467187d8f1559b1/junit-4.14.1.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.robolectric/junit/4.14.1/d0ecffff3ec5ab9c59cac23d46b9269b9969df05/junit-4.14.1-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.robolectric/junit/4.14.1/3b4ff7fc08c2db294781b8bfa8d5b93790eed4dd/junit-4.14.1-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

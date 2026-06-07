@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/adherence-tracking/NemoPill.adherence-tracking.androidTest.iml" filepath="$PROJECT_DIR$/.idea/modules/adherence-tracking/NemoPill.adherence-tracking.androidTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/adherence-tracking/NemoPill.adherence-tracking.main.iml" filepath="$PROJECT_DIR$/.idea/modules/adherence-tracking/NemoPill.adherence-tracking.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/adherence-tracking/NemoPill.adherence-tracking.unitTest.iml" filepath="$PROJECT_DIR$/.idea/modules/adherence-tracking/NemoPill.adherence-tracking.unitTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/NemoPill.app.androidTest.iml" filepath="$PROJECT_DIR$/.idea/modules/app/NemoPill.app.androidTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/NemoPill.app.main.iml" filepath="$PROJECT_DIR$/.idea/modules/app/NemoPill.app.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/NemoPill.app.unitTest.iml" filepath="$PROJECT_DIR$/.idea/modules/app/NemoPill.app.unitTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/core/NemoPill.core.iml" filepath="$PROJECT_DIR$/.idea/modules/core/NemoPill.core.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.iml" filepath="$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.androidTest.iml" filepath="$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.androidTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.main.iml" filepath="$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.unitTest.iml" filepath="$PROJECT_DIR$/.idea/modules/medication-management/NemoPill.medication-management.unitTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/notifications/NemoPill.notifications.androidTest.iml" filepath="$PROJECT_DIR$/.idea/modules/notifications/NemoPill.notifications.androidTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/notifications/NemoPill.notifications.main.iml" filepath="$PROJECT_DIR$/.idea/modules/notifications/NemoPill.notifications.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/notifications/NemoPill.notifications.unitTest.iml" filepath="$PROJECT_DIR$/.idea/modules/notifications/NemoPill.notifications.unitTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.iml" filepath="$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.androidTest.iml" filepath="$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.androidTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.main.iml" filepath="$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.unitTest.iml" filepath="$PROJECT_DIR$/.idea/modules/scheduling/NemoPill.scheduling.unitTest.iml" />
+    </modules>
+  </component>
+</project>
