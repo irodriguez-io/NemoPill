@@ -14,16 +14,19 @@ kotlin {
 }
 
 dependencies {
-    // Core has no production dependencies by design — it is the shared
-    // domain kernel imported by every feature module. Keep this section
-    // minimal; do NOT add Android framework, network, or persistence
-    // dependencies here.
+    // Core has no Android, network, or persistence dependencies by design — it is the
+    // shared domain kernel imported by every feature module. The one production dependency
+    // is Kotlin Coroutines core: the InProcessEventBus is a MutableSharedFlow<DomainEvent>
+    // (file 04 § DomainEventPublisher). coroutines-core is pure-JVM/multiplatform — it adds
+    // no Android types, so the "no Android imports" build guarantee holds (T-009 ADR).
+    implementation(libs.kotlinx.coroutines.core)
 
     // Architecture conformance tests — Konsist runs in the test source set
     // of :core so it can inspect the entire project classpath from one place.
     testImplementation(libs.konsist)
     testImplementation(libs.junit4)
     testImplementation(libs.truth)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 // Kover per-package coverage gate (ADR-078 deferral resolved at T-008 — real code now

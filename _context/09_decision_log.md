@@ -20,6 +20,174 @@
 
 ## Current State
 
+### ADR-096: `:notifications` owns its notification string resources and Kover application-layer threshold; channel name/description + demo copy live in `:notifications/res`, not `:app/res`
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Likely Change Surface`; `_context/11 § Notification channel display names`; ADR-086
+
+#### Context
+
+The T-009 packet's "Likely Change Surface" literally directs the `reminder_on_time` channel name/description and demo notification copy into `app/src/main/res/values/strings.xml`. But `NotificationChannels` and `ReminderNotificationBuilder` live in `:notifications`, which `:app` depends on (not the reverse). A library module cannot read the `:app` `R` class, and the on-demand notification build (triggered by a bus event, not by `:app`) cannot have strings passed down at construction time. Placing the strings in `:app/res` would therefore require `:notifications` to import `:app` — breaking the load-bearing `:notifications`-must-not-import-`:app` boundary this slice exists to prove. File 11 requires "no inline literals; sourced from string resources" but does not pin the owning module; file 04 says `:notifications` owns the notification surface.
+
+#### Decision
+
+Author all notification strings (channel display name + description, on-time title/body templates, "Take"/"Skip" labels, hardcoded non-PII demo placeholders) in `notifications/src/main/res/values/strings.xml`, referenced via `io.nemopill.notifications.R`. EN only in T-009 (ES is M-006). Also activate the `:notifications` Kover gate using the ADR-086 report-level-filter form: `io.nemopill.notifications.application.*` ≥ 80% line (`PresentReminderUseCase`, `ReminderFiredListener`); domain is vacuous; infrastructure/root carry no threshold.
+
+#### Consequences
+
+Honors file 11's "no inline literals" intent and the module graph simultaneously; deviates from the packet's literal file path. Future `:notifications` copy (BR-010 variants, ES) lands in this module's resources. Coverage gate measured at 100% line in the gated scope at T-009 close. Surfaced for gatekeeper ratification. Status Proposed.
+
+---
+
+### ADR-095: `ConfirmFromNotificationReceiver` is a synchronous logging-and-dismiss stub in T-009; typed parse → Confirmation write (and its `goAsync()`) deferred to T-010
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Explicitly Out Of Scope`; `_context/06 § Section 2 / § Timeout rule`; `_context/13 § THR-002`
+
+#### Context
+
+M-002 item (4) — the inline-action confirm path that writes a Room `Confirmation` via `ConfirmDoseFromReminderUseCase` — is explicitly out of T-009 scope (no Room in M-002-early). T-009 only needs the receiver to exist (manifest-declared, `exported="false"`) and dismiss the notification on tap, so the action PendingIntents have a real target. The packet suggested `goAsync()` + a bounded coroutine scope per file 06 § Timeout rule.
+
+#### Decision
+
+Implement `onReceive` as a synchronous stub: validate the action string at the entry point, parse the `doseId`/`status` extras enough to log one static, non-PII line keyed on the bounded status, and dismiss the source notification via `NotificationManagerCompat.cancel(notificationIdFor(doseId))`. Do **not** introduce `goAsync()` here: the stub does no async or suspending work, so a `goAsync()`/`finish()` wrapper would be pointless machinery. The `goAsync()` + bounded-scope pattern is instead demonstrated in T-009 on the publish side (`ReminderAlarmReceiver`, which genuinely awaits a suspend `publish`), and lands in `ConfirmFromNotificationReceiver` in T-010 alongside the suspend `ConfirmDoseFromReminderUseCase` dispatch that needs it.
+
+#### Consequences
+
+Tapping "Take"/"Skip" logs and dismisses but writes nothing in T-009. T-010 replaces the stub with the typed parse → use-case dispatch (with `Result.Err.UnexpectedNotificationPayload` / `UnknownDose`) and the `goAsync()` scope. Status Proposed.
+
+---
+
+### ADR-094: On-time Reminder inline actions — two `FLAG_IMMUTABLE` broadcast `PendingIntent`s ("Take"=TAKEN / "Skip"=SKIPPED) to an `exported="false"` receiver; content-tap resolves the launcher Intent at runtime
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope`; `_context/11 § Notification (inline action)`; `_context/06 § Section 2`; ADR-023
+
+#### Context
+
+The on-time Reminder must expose the two inline actions the product is built around, and every `PendingIntent` must use `FLAG_IMMUTABLE` (ADR-023; exercised by the `PendingIntentFlagImmutableRule` Konsist check). The content-tap must open the app, but `:notifications` may not import `:app`'s `MainActivity`.
+
+#### Decision
+
+`ConfirmActionPendingIntentFactory` builds two `PendingIntent.getBroadcast(...)` actions with `FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT`, targeting `ConfirmFromNotificationReceiver`, carrying action `io.nemopill.notifications.ACTION_CONFIRM_FROM_NOTIFICATION` and extras `{ doseId, status }` with `status ∈ {TAKEN, SKIPPED}` (aggregate ID only — no Patient data). Request codes are stable per `(doseId, action)` so the two intents never collide. The content-tap uses `PendingIntent.getActivity(...)` (also `FLAG_IMMUTABLE`) over `packageManager.getLaunchIntentForPackage(packageName)`, mirroring the T-008 `AlarmManagerSchedulerAdapter` launcher-resolution pattern to avoid a `:notifications → :app` import.
+
+#### Consequences
+
+Three `FLAG_IMMUTABLE` PendingIntents per notification, all asserted by the Robolectric integration test (immutable, broadcast, action, extras, target receiver). Lock-screen residual (THR-008) is the accepted product affordance, not a regression. Status Proposed.
+
+---
+
+### ADR-093: `NotificationManagerCompat` adapter + `reminder_on_time` channel created at `IMPORTANCE_HIGH`
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/04 § NotificationPort`; `_context/06 § Section 1 / Section 2`; `_context/11 § BR-010 channel-importance`; BR-004
+
+#### Context
+
+`NotificationPort` needs its first adapter, and the `reminder_on_time` channel (ID pinned in file 06) must be created with an importance posture. File 11 § BR-010 channel-importance deliberately diverges from M3's quieter notification-style default because on-time Reminders are time-critical (BR-004).
+
+#### Decision
+
+`NotificationManagerNotificationAdapter` implements `NotificationPort` via `NotificationManagerCompat`, posting under a stable per-Dose notification ID (dedupe key = `doseId`, file 06 § Idempotency rule). `NotificationChannels.ensureReminderOnTimeChannel` creates the channel via `NotificationChannelCompat.Builder` at `IMPORTANCE_HIGH`, with name/description from string resources (ADR-096). The post is guarded by `areNotificationsEnabled()` (the `Result.Err.NotificationsPermissionRevoked` runtime-permission UX is deferred to M-004; demo relies on a manual grant). `@SuppressLint("MissingPermission")` documents the guarded deferral.
+
+#### Consequences
+
+Only `reminder_on_time` is created in T-009 (other BR-010 channels are M-004). The channel ID is the durable contract; importance is a creation-time default the Patient may override. Status Proposed.
+
+---
+
+### ADR-092: Dagger 2.51.1 cannot read Kotlin 2.1.0 metadata on the members-injection (`@Inject` field) validation path; avoid field injection (use `EntryPointAccessors`); durable fix is a Hilt version bump routed forward
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § Risks`; ADR-083; `_context/04 § DI`
+
+#### Context
+
+T-009 introduced the project's first `@Inject lateinit var` field-injection site (`NemoPillApplication.reminderFiredListener`). `:app:hiltJavaCompile{Debug,Release}` failed with `IllegalStateException: Unable to read Kotlin metadata due to unsupported metadata version` from `dagger.internal.codegen.kotlin.KotlinMetadata.metadataOf`, reached via `InjectValidator.validateField → isMissingSyntheticPropertyForAnnotations`. Dagger/Hilt 2.51.1's bundled Kotlin-metadata reader does not support Kotlin 2.1.0's metadata version, and field injection is the trigger. T-008 worked because it used only constructor injection and `@AndroidEntryPoint`/`@HiltViewModel`, which do not exercise that path.
+
+#### Decision
+
+Avoid `@Inject` field injection entirely for now. `NemoPillApplication` retrieves `ReminderFiredListener` from the SingletonComponent via `EntryPointAccessors.fromApplication(this, AppStartupEntryPoint::class.java)` (a provision `@EntryPoint`, not members injection). The durable fix — bumping Hilt to a release whose metadata reader supports Kotlin 2.1.0 — is deliberately **not** folded into T-009 (a version-catalog change with broad blast radius against the "all 8 CI stages green" gate); it is routed to a follow-up dependency-maintenance task.
+
+#### Consequences
+
+No `@Inject` fields anywhere until the Hilt bump lands; constructor injection and provision entry points are the sanctioned patterns. The same `EntryPointAccessors` pattern is used for the `ReminderAlarmReceiver` (ADR-091). Re-evaluate at the Hilt bump. Status Proposed.
+
+---
+
+### ADR-091: Broadcast-receiver Hilt injection via `EntryPointAccessors` + `@EntryPoint`; `:scheduling` gains the Hilt Gradle plugin + KSP (refines ADR-083) and excludes Dagger-generated classes from its Kover gate
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Risks`; ADR-083; ADR-086
+
+#### Context
+
+A manifest `BroadcastReceiver` is OS-instantiated and cannot be constructor-injected. `@AndroidEntryPoint` field injection is unusable here: its injection hook calls `super.onReceive(...)`, which targets the abstract `BroadcastReceiver.onReceive` and so does not compile from Kotlin source (the Hilt superclass rewrite happens post-compile). T-008's ADR-083 kept the Hilt Gradle plugin + KSP out of `:scheduling` (its `@Inject`-constructor adapters were aggregated into `:app`'s graph).
+
+#### Decision
+
+`ReminderAlarmReceiver` declares a nested `@EntryPoint @InstallIn(SingletonComponent::class) ReminderAlarmEntryPoint` exposing `DomainEventPublisher` and `ClockPort`, and retrieves them in `onReceive` via `EntryPointAccessors.fromApplication(context.applicationContext, ...)`. Processing an `@EntryPoint` requires Hilt codegen in `:scheduling`, so the module now applies the Hilt Gradle plugin + `ksp(hilt.compiler)` and adds `kotlinx-coroutines-android` for the bounded `goAsync()` publish scope. This refines ADR-083 for the receiver-injection case. A side effect: Dagger now generates `ScheduleDemoReminderUseCase_Factory` in `io.nemopill.scheduling.application`, which dropped the Kover application-layer gate to 38.7%; the gate now excludes `@dagger.internal.DaggerGenerated` classes (a report-level filter consistent with ADR-086), restoring it to 100% on hand-written code.
+
+#### Consequences
+
+`:scheduling` is now a Hilt-processing module. The same `EntryPointAccessors` pattern serves `NemoPillApplication` (ADR-092). The Kover generated-code exclusion is a general improvement (generated factories never belong in coverage) and may be applied to other modules if/when they gain KSP. Status Proposed.
+
+---
+
+### ADR-090: Demo `ReminderAlarmReceiver` publishes `ReminderFired(ON_TIME)` unconditionally on the event bus via a bounded `goAsync()` scope; the precondition-checked `FireReminderUseCase` (file 06 § F-005 steps 2–3) is deferred to M-004
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Out Of Scope`; `_context/06 § F-005 / § Timeout rule`; BR-010
+
+#### Context
+
+T-009 turns the T-008 no-op alarm receiver into the cross-Bounded-Context seam. The real F-005 fire path (read the `Dose` from Room, check `status == pending` and the BR-010 1-hour window) requires Room and a persisted `Dose`, both out of M-002-early scope.
+
+#### Decision
+
+`ReminderAlarmReceiver.onReceive` reads the `doseId` extra (the only entry-point parse — file 06 § AlarmManager PendingIntent boundary) and publishes `ReminderFired(DoseId, ClockPort.now(), ON_TIME)` onto the `:core` `DomainEventPublisher`, unconditionally, for the hardcoded demo Dose. The publish runs on a `goAsync()` + bounded coroutine scope under a 5s `withTimeout` (well under the OS ~10s receiver lifetime), with `PendingResult.finish()` in `finally` and static, non-PII log lines. `:scheduling` never imports `:notifications`; the seam is the bus.
+
+#### Consequences
+
+The walking-skeleton demo always fires `ON_TIME`. The real precondition-checked `FireReminderUseCase` (and the `LATE` variant) are M-004. The in-process bus's no-durability trade-off (file 04 § Architecture Risks) is accepted for the demo; if the cold-start delivery proves flaky on hardware, the Room-as-outbox path is the routed durable fix. Status Proposed.
+
+---
+
+### ADR-089: First `:core::event` production code — `InProcessEventBus` is a `MutableSharedFlow<DomainEvent>` (replay 8, DROP_OLDEST), bound as an `@Singleton`; `:core` takes `kotlinx-coroutines-core` as its one production dependency
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-009 (M-002); `_context/04 § DomainEventPublisher`; `_context/06 § Ordering rule / Idempotency rule`; `_context/02 § Domain Events`
+
+#### Context
+
+Cross-module communication is event-driven through `:core`'s `DomainEventPublisher` (file 04). T-009 is the first slice needing it. The cold-start race (the alarm-fired receiver publishes before the app's subscriber registers) requires subscriber-late catch-up.
+
+#### Decision
+
+Add `event/DomainEvent.kt` (sealed marker), `event/ReminderFired.kt` (`data class` of `DoseId` + `Instant` + `ReminderVariant{ON_TIME,LATE}` — no Patient data; only `ON_TIME` emitted in T-009), `event/DomainEventPublisher.kt` (`suspend fun publish` + `val events: Flow<DomainEvent>`), and `event/InProcessEventBus.kt` — a `MutableSharedFlow<DomainEvent>(replay = 8, extraBufferCapacity = 16, onBufferOverflow = DROP_OLDEST)`. `DROP_OLDEST` keeps `publish` non-suspending under back-pressure (a fired Reminder is never blocked by a slow subscriber); the replay buffer covers the cold-start subscriber-late case. `:core` gains `kotlinx-coroutines-core` as its sole production dependency — pure-JVM/multiplatform, so the "no Android imports in `:core`" build guarantee holds. The bus is bound as an `@Singleton` (`CoreEventModule`, `@Provides` since `:core` carries no Hilt).
+
+#### Consequences
+
+The `DomainEvent` hierarchy is seeded with `ReminderFired` only; the other file-02 members are additive-only with their owning features. No event durability across process death (accepted trade-off, file 04). `:core` Kover gate measured 100% line on `io.nemopill.core.*` (incl. `event.*`) at T-009 close. Status Proposed.
+
+---
+
 ### ADR-088: ktlint `standard:function-naming` suppressed per-`@Composable` (PascalCase Compose convention); repo-wide `.editorconfig` exemption deferred to the Compose-proliferation milestone
 
 - Date: 2026-06-05
