@@ -1,0 +1,68 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "989630133f1a2004073de477229a78dd",
+    "entities": [
+      {
+        "tableName": "confirmation",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`confirmationId` TEXT NOT NULL, `doseId` TEXT NOT NULL, `status` TEXT NOT NULL, `confirmedAt` INTEGER NOT NULL, `source` TEXT NOT NULL, PRIMARY KEY(`confirmationId`))",
+        "fields": [
+          {
+            "fieldPath": "confirmationId",
+            "columnName": "confirmationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "doseId",
+            "columnName": "doseId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAt",
+            "columnName": "confirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "confirmationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_confirmation_doseId",
+            "unique": true,
+            "columnNames": [
+              "doseId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_confirmation_doseId` ON `${TABLE_NAME}` (`doseId`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '989630133f1a2004073de477229a78dd')"
+    ]
+  }
+}

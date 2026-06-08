@@ -20,6 +20,153 @@
 
 ## Current State
 
+### ADR-103: `:adherence-tracking` Kover thresholds collapse to a single ≥ 90 % combined Domain+Application gate (ADR-086 constraint); end-to-end receiver test uses per-module test `@Database`s + a test-only `:notifications → :adherence-tracking` dependency + receiver `@VisibleForTesting` seams
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); `_context/08_active_task_packet.md § In Scope / § Acceptance Criteria (AC-002 / AC-003 / AC-004 / AC-004a / AC-006)`; ADR-086 (report-level Kover filters); ADR-091 (`@DaggerGenerated` exclusion)
+
+#### Context
+
+The packet specifies two `:adherence-tracking` Kover thresholds — Domain ≥ 90 % and Application ≥ 80 %. Kover 0.8.x forbids per-rule filters (ADR-086): a report's `includes`/`excludes` are report-wide and a verify `rule` measures the whole filtered scope, so two different per-package thresholds in one module cannot be expressed directly. Separately, AC-004's end-to-end receiver test must drive `ConfirmFromNotificationReceiver` → `:core` gateway → use case → `RoomConfirmationRepository` → real Room, but the receiver lives in `:notifications`, the persistence path in `:adherence-tracking`, and the `@Database` aggregate (`NemoPillDatabase`) in `:app` — none reachable from a single library-module test by the production graph, and the receiver is OS-instantiated (no constructor injection).
+
+#### Decision
+
+(1) **Coverage:** one report-wide filter scoping `io.nemopill.adherencetracking.domain.*` + `application.*` (with the ADR-091 `@DaggerGenerated` exclusion) and one verify rule at **minValue = 90** over the combined scope. 90 ≥ both stated minimums, so it satisfies Domain ≥ 90 and is strictly stronger than Application ≥ 80; `infrastructure.*` (entity/dao/converters/repository/gateway) carries no % threshold and is exercised by the Robolectric integration tests. (2) **Test architecture:** each module that needs real Room in its tests declares a **test-only `@Database`** in its test source set with `kspTest(room.compiler)` (`TestConfirmationDatabase` in `:adherence-tracking`; `ReceiverTestConfirmationDatabase` in `:notifications`) — the `:app` aggregate is unreachable from a library test. The `:notifications` e2e test adds a **test-only** `testImplementation(project(":adherence-tracking"))` (the production graph stays clean; Konsist excludes `/test/` paths). The receiver exposes three `@VisibleForTesting` seams (`gatewayProvider`, `confirmTimeoutMillis`, `onOutcomeForTest`) so the test injects a real-Room / failing / slow gateway and observes the async outcome; the production default of `gatewayProvider` is `EntryPointAccessors`.
+
+#### Consequences
+
+`koverVerify` passes with `:adherence-tracking` measured ~100 % on the gated scope (verified). The single-gate collapse is a faithful, surfaced reading of the two-threshold spec under ADR-086, not a silent descope. The test-only cross-feature dependency is intentional and required by AC-004's end-to-end intent. The receiver's static `@VisibleForTesting` seams are reset in the test's `@After` to avoid cross-test leakage. Status Proposed.
+
+---
+
+### ADR-102: Demo-vs-full-F-006 gap — T-010 persists only the `Confirmation` (no `Dose.status` co-update, no `DoseRepository`, `UnknownDose` deferred); first at-rest persistence of `Confidential` data accepts ADR-043 plain-text Room
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); `_context/06 § F-006`; `_context/04 § Architecture Risks`; `_context/13 § THR-010 / § 9 Q1`; ADR-043; supersedes nothing
+
+#### Context
+
+`_context/06 § F-006` is the full confirm flow: typed parse (1) → dispatch (2) → BR-005/BR-011 checks (3) → `Confirmation` write **and** `Dose.status` co-update in one `withTransaction` (4) → defensive `SchedulerPort.cancel` (5) → dismiss (6) → emit `DoseConfirmed` (7). M-002 has no persisted `Dose` (no `Medication`, no Dose materialization), so the full transaction cannot be realized yet. T-010 is also the project's **first at-rest persistence of `Confidential`-class data** (the `Confirmation` row in plain-text SQLite — the THR-009 / THR-010 surface).
+
+#### Decision
+
+T-010 realizes F-006 steps 1–2, the `Confirmation`-write half of step 4, step 6, and step 7. **Deferred to M-004 / M-005:** the `Dose.status` co-update (step 4 second half) and the cross-module `:adherence-tracking → :scheduling` `DoseRepository` dependency (file 04 § Architecture Risks); the BR-011 24-hour-window check (needs `Dose.scheduledAt`; vacuously satisfied at on-time confirm); the defensive `SchedulerPort.cancel(doseId)` (step 5); and `Result.Err.UnknownDose` Dose-existence resolution (no `Dose` table to resolve against). `RoomConfirmationRepository` still wraps the single write in `withTransaction { }` so the co-update drops in later without restructuring. **At-rest encryption (AC-008a):** by reference to the already-ratified **ADR-043** (file 13 § 9 Q1, Option A — plain-text Room), SQLCipher / at-rest encryption is intentionally **not** added at this first persistence; the THR-010 residual stays an accepted `medium`. No new code — an audit-trail note that the question was consciously considered at first persistence.
+
+#### Consequences
+
+The demo writes a `Confirmation` and dismisses the notification but does not flip any `Dose.status` (there is none). The full Dose-aggregate same-transaction co-update, the defensive cancel, and `UnknownDose` are routed to M-004 / M-005 when real Doses exist. The plain-text-Room decision is unchanged from ADR-043; the file-13 § 9 (ii) revisit triggers remain the standard escalation path. Status Proposed.
+
+---
+
+### ADR-101: ADR-049 rule (ii) wired — sensitive `data class` redacted `toString()` Konsist rule; ADR-087 open question resolved (scope = feature `.domain` + `:core::event` data classes; non-PII `:core` types exempt); `Result.Err.UnexpectedNotificationPayload` added
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); resolves **ADR-087**; ADR-081 (code-surface-dependent rule wiring); ADR-049 (the two redaction rules); ADR-031; `_context/13 §§ Observability / Information Disclosure`
+
+#### Context
+
+ADR-049 specifies two redaction rules; rule (i) (no dynamic `throw` messages) was wired at T-008 (ADR-081 / `NoDynamicThrowMessageRule`). Rule (ii) (sensitive `data class` redacted `toString()`) was deferred to "the first sensitive Domain `data class`", and ADR-087 left open whether rule (ii)'s literal "(:domain, :core) data class" scope would over-match non-PII `:core` data classes (`Result.Ok`, `ReminderFired`). T-010 introduces `Confirmation` (first `Confidential`-class Domain `data class`) and `:core::event::DoseConfirmed` (first `:core` event carrying a Confidential field), forcing the rule to be wired and the scope question to be settled.
+
+#### Decision
+
+Wire rule (ii) as a new `:core` Konsist rule `DataClassRedactedToStringRule` (+ negative test) — existing rule (i) file untouched. **Resolve ADR-087:** scope rule (ii) to `data class`es that carry `Confidential`-class data per file 13 — i.e. **feature-module `.domain` data classes** + **`:core::event` data classes** — and **exempt non-PII shared-kernel types** via an allow-list: `Result.Ok` / `Result.Err.*` (in `io.nemopill.core.result`, out of scope automatically) and `ReminderFired` (in `:core::event`, explicitly allow-listed — carries only `DoseId` + `Instant` + a non-Confidential variant). Every in-scope data class must override `toString()` (the auto-generated data-class `toString()` dumps all fields). `Confirmation` and `DoseConfirmed` get a redacted `toString()` (`"…(REDACTED)"`); a runtime test pins the field-free content. Also add `Result.Err.UnexpectedNotificationPayload` (a field-free `data object`) to the `:core` `Result.Err` catalog for the receiver's typed-parse rejection (file 06 § F-006); being field-free it is non-PII and out of rule (ii) scope.
+
+#### Consequences
+
+`arch-conformance` (stage 5) now enforces redaction on Confidential-bearing data classes; future sensitive Domain entities are covered by the same package-scoped rule. Rule (i) stays green (all new `throw`/log messages are static). The exempt allow-list is the single place to record a deliberately-non-PII `:core::event` type. Status Proposed; supersedes the open portion of ADR-087.
+
+---
+
+### ADR-100: `:core::event::DoseConfirmed` added to the `DomainEvent` hierarchy — carries Confidential `status`, redacted `toString()`, dedupe key `(confirmationId, confirmedAt)`, no cross-module consumer in MVP
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); `_context/02 § Domain Events`; `_context/06 § F-006 step 7 / line 35`; ADR-089 (event bus); ADR-101 (rule (ii))
+
+#### Context
+
+`_context/02 § Domain Events` lists `DoseConfirmed` as an additive member of the `:core::event` `DomainEvent` hierarchy (seeded by `ReminderFired` at T-009, ADR-089). F-006 step 7 emits it on a successful confirm. It must reference `ConfirmationId` / `ConfirmationStatus` / `ConfirmationSource`, which therefore must be visible from `:core` (one of the forces behind the ADR-097 vocabulary relocation).
+
+#### Decision
+
+Add `data class DoseConfirmed(doseId, confirmationId, status, confirmedAt, source) : DomainEvent` in `:core::event`. `ConfirmDoseFromReminderUseCase` publishes it on a successful `Confirmation` write. It carries Confidential `status`, so it overrides `toString()` to a redacted form (ADR-101). **Dedupe key `(confirmationId, confirmedAt)`** per file 02 (UC-007 correction re-emits with the same `confirmationId`). **No cross-module consumer in T-010** (file 06 line 35) — the on-screen Adherence counter (M-002 item 5, T-011) is the first subscriber.
+
+#### Consequences
+
+The event hierarchy grows additively (no behavior change to existing subscribers). The redaction is enforced by ADR-101's rule. The first consumer lands in T-011. Status Proposed.
+
+---
+
+### ADR-099: `:adherence-tracking` `Confirmation` aggregate + `RoomConfirmationRepository` — 1:1 unique index on `doseId` with INSERT-OR-REPLACE idempotency, `withTransaction`, base-`RoomDatabase` injection; first `:adherence-tracking` production code
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); `_context/04 § ConfirmationRepository / § Local persistence`; `_context/06 § Idempotency rule / § Ordering rule / § Retry rule`; `_context/02 row Confirmation` / `BR-005`; ADR-043 (plain-text Room)
+
+#### Context
+
+T-010 stands up the first `:adherence-tracking` production code: the `Confirmation` Domain entity, the `ConfirmationRepository` port + `RoomConfirmationRepository` adapter, `ConfirmDoseFromReminderUseCase` (UC-004), and the Room `@Entity` / `@Dao` / `@TypeConverter`s. The repository must be 1:1-unique and idempotent on `doseId` (file 06 § Idempotency rule — safe against double-tap) and must use `withTransaction` (file 06 § Ordering rule), yet cannot reference the `:app`-resident `NemoPillDatabase`.
+
+#### Decision
+
+`ConfirmationEntity` declares a **unique index on `doseId`**; `ConfirmationDao.upsert` uses `@Insert(onConflict = REPLACE)` so a second confirm for the same Dose replaces the row (idempotent on `doseId`). `RoomConfirmationRepository` wraps the write in `db.withTransaction { }` and is constructor-injected with the **base `androidx.room.RoomDatabase`** (provided from the `NemoPillDatabase` singleton in `:app` DI) plus the `ConfirmationDao` — so the feature module never imports the `:app` aggregate. `Instant` ↔ epoch-millis and both enums ↔ `name` go through `ConfirmationConverters`. `ConfirmDoseFromReminderUseCase` constructs the `Confirmation` (`source = NOTIFICATION_ACTION`, `confirmedAt = ClockPort.now()`, random `ConfirmationId`), persists, and on `Result.Ok` publishes `DoseConfirmed`; adapter-boundary exceptions map to `Result.Err.Unexpected` (static message — ADR-049 rule (i) green), `CancellationException` rethrown. **First at-rest persistence of `Confidential` data** is plain-text Room per the ratified ADR-043 (AC-008a; THR-010 residual `medium` accepted).
+
+#### Consequences
+
+The `confirmation` table (PK `confirmationId`, unique index on `doseId`) is the project's first persisted aggregate; its committed schema is ADR-098's `1.json`. Idempotency is enforced at the storage layer, not in the use case. The base-`RoomDatabase` injection keeps `:adherence-tracking` independent of `:app`. Status Proposed.
+
+---
+
+### ADR-098: `NemoPillDatabase` single-instance Room `@Database` in `:app` (root package, version 1, `exportSchema = true`); Room codegen via KSP at the `@Database` site only — `annotationProcessor` → KSP switch with minimal placement
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); `_context/04 § Architecture Risks`; `_context/06 § Section 1 / Section 2`; ADR-083 / ADR-091 (KSP minimal placement); `_context/08 § AC-005`
+
+#### Context
+
+T-010 stands up the project's first Room database. File 04 makes the single-`NemoPillDatabase` design load-bearing (the cross-module Dose-aggregate transaction), and only `:app` may depend on all feature modules whose DAOs it aggregates, so the `@Database` must live in `:app`. The `:adherence-tracking` build still declared `annotationProcessor(room.compiler)` — wrong for this KSP project — and the Room schema-export location had to be set. AC-005 names the committed schema path exactly: `app/schemas/io.nemopill.app.NemoPillDatabase/1.json`.
+
+#### Decision
+
+`NemoPillDatabase` (`@Database(entities = [ConfirmationEntity::class], version = 1, exportSchema = true)`, `@TypeConverters(ConfirmationConverters::class)`) lives in `:app` in the **`io.nemopill.app` root package** (not a `persistence` sub-package) so Room's FQN-derived schema directory is exactly `app/schemas/io.nemopill.app.NemoPillDatabase/` per AC-005 (resolving the packet's internal path inconsistency in favor of the acceptance criterion). Room codegen runs via **KSP at the `@Database` site only**: `:app` gets `ksp(room.compiler)` + the `room.schemaLocation` KSP arg; `:adherence-tracking` keeps only `room-runtime`/`room-ktx` (its `@Dao`/`@Entity` are processed at the `:app` `@Database` compilation unit — the standard multi-module Room model), with `kspTest(room.compiler)` for its test-only `@Database`. The stale `annotationProcessor(room.compiler)` is removed (not merely switched). No `fallbackToDestructiveMigration` outside test builds (file 06 § Section 2). `1.json` is committed.
+
+#### Consequences
+
+The empirically-confirmed minimal KSP placement (Room compiler in `:app` + per-test-source `kspTest`, none in feature `main`) refines ADR-083 / ADR-091 for the Room case. Future entities (`Medication` / `DoseSchedule` / `Dose`) are added with a `Migration(from, to)` + a new committed schema JSON. The committed `1.json` declares the `confirmation` table with the unique `doseId` index. Status Proposed.
+
+---
+
+### ADR-097: Receiver→use-case seam — a neutral `:core` `NotificationConfirmationGateway` port bound in `:app` (option C); shared confirmation vocabulary (`ConfirmationId` / `ConfirmationStatus` / `ConfirmationSource`) relocated to `:core`
+
+- Date: 2026-06-07
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-010 (M-002); `_context/08_active_task_packet.md § Architect Decision Required`; `_context/04 § Gradle dependency graph (line 170)`; `_context/06 § F-006`; `_context/13 § "PendingIntent → notification-action receiver"`; supersedes nothing; relates ADR-089 (`DomainEventPublisher` in `:core`)
+
+#### Context
+
+`_context/04 § Gradle dependency graph` forbids feature modules from depending on each other ("`:app` is the only module allowed to depend on the four feature modules"), yet `_context/06 § F-006` step 2 and `_context/13`'s "PendingIntent → notification-action receiver" row place `ConfirmFromNotificationReceiver` in `:notifications` and have it directly "invoke `ConfirmDoseFromReminderUseCase` in `:adherence-tracking::application`". A `:notifications` class cannot reference an `:adherence-tracking` type without an illegal cross-feature Gradle dependency. The T-010 packet surfaced this as the second load-bearing module seam (the first — `:scheduling` → `:notifications` via the `:core` event bus — was proven by T-009) and mandated resolving it as an ADR before wiring the receiver. A secondary constraint: `:core::event::DoseConfirmed` (added in T-010) references `ConfirmationId` / `ConfirmationStatus` / `ConfirmationSource`, and `:notifications` needs `ConfirmationStatus` for its typed IPC parse — so those newtypes cannot live in `:adherence-tracking::domain` (that would force `:core` to depend on a feature, and `:notifications` to import `:adherence-tracking`).
+
+#### Decision
+
+Adopt the packet's recommended **option (C)**: define a neutral `:core` port `io.nemopill.core.confirm.NotificationConfirmationGateway { suspend fun confirm(doseId, status): Result<Unit, Result.Err> }`. `:notifications`' receiver depends only on this `:core` port (it already depends on `:core`) and obtains it via `EntryPointAccessors`; `:adherence-tracking` provides the implementation (`AdherenceConfirmationGateway`) that delegates to `ConfirmDoseFromReminderUseCase`; `:app::di::AdherenceModule` binds port → impl. Relocate the shared confirmation vocabulary to `:core` — `ConfirmationId` to `:core::id` (symmetry with `DoseId`, resolving the packet's "Developer picks" question) and `ConfirmationStatus` / `ConfirmationSource` to a new `:core::confirm` package (genuinely shared-kernel: the IPC `status` enum and the `:core` event both need them). `:adherence-tracking::domain::Confirmation` re-uses the `:core` types.
+
+#### Consequences
+
+Both feature modules depend only on `:core`; neither imports the other (the strict file-04 graph holds, Konsist `NoCrossFeatureDomainImportRule` stays green). The **command** semantics of F-006 are preserved ("invokes the use case") rather than pushing a command through the past-tense `DomainEventPublisher`; precedented by `DomainEventPublisher` itself living in `:core`. Security: the seam does not widen the IPC-ingress trust boundary — the typed `ConfirmationStatus` parse still happens in the receiver before the port is called, and the receiver stays `exported="false"`. Deviates from the packet's literal placement of `ConfirmationStatus` / `ConfirmationSource` / `ConfirmationId` in `:adherence-tracking::domain` (the packet explicitly anticipated this and delegated the choice). Status Proposed pending gatekeeper ratification.
+
+---
+
 ### ADR-096: `:notifications` owns its notification string resources and Kover application-layer threshold; channel name/description + demo copy live in `:notifications/res`, not `:app/res`
 
 - Date: 2026-06-07
