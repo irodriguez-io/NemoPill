@@ -110,6 +110,20 @@ dependencies {
 
     testImplementation(libs.junit4)
     testImplementation(libs.robolectric)
+    // T-011 presentation/observe-leg tests: Truth assertions + kotlinx-coroutines-test (runTest,
+    // UnconfinedTestDispatcher, Dispatchers.setMain) for DemoViewModelTest (src/test, both
+    // variants), and the Compose UI test runner (createComposeRule under Robolectric — file 05 §
+    // Test Portfolio E2E row) for DemoScreenCounterRobolectricTest. That Compose test lives in
+    // src/testDebug (debug-only) because createComposeRule launches the ComponentActivity from
+    // compose-ui-test-manifest, which is a debugImplementation dep merged only into the debug
+    // manifest — so :app:testReleaseUnitTest would otherwise fail to resolve it. All three aliases
+    // already exist in the version catalog and are used elsewhere (Truth + coroutines-test in
+    // :core / :adherence-tracking; compose-ui-test-junit4 in :app androidTest); no new catalog
+    // entry. coroutines-test is the only dep the T-011 packet's Likely Change Surface named
+    // explicitly — Truth + ui-test-junit4 are implied by the AC-004 / AC-005 test forms.
+    testImplementation(libs.truth)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.compose.ui.test.junit4)
     // Roborazzi snapshot infrastructure (AC-004 / T-007).
     // BOM applied on test classpath to align Compose transitive deps from roborazzi-compose.
     testImplementation(platform(libs.compose.bom))

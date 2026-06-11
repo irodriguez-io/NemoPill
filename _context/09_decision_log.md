@@ -20,10 +20,94 @@
 
 ## Current State
 
+### ADR-107: T-011 demo-vs-full gap — the on-screen counter is a raw "doses Taken" tally, not the BR-008 Adherence percentage (M-005)
+
+- Date: 2026-06-10
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-011 (M-002); `_context/08 § In Scope / § Explicitly Out Of Scope`; `_context/02 § BR-008`; `_context/03 § UC-009`; `_context/07 § Milestone Register M-002` Done-When item (5); mirrors ADR-102 (T-010 demo-vs-full-F-006 gap)
+
+#### Context
+
+M-002 Done-When item (5) reads "Compose screen observes the Confirmation via `StateFlow` and increments the hardcoded Adherence counter from 0 to 1." A reviewer could read "Adherence counter" as the BR-008 Adherence rate. M-002 is the walking skeleton (no `Medication` / `Dose` / denominator exists), so a real Adherence percentage cannot be computed.
+
+#### Decision
+
+T-011's counter is a **raw count of Taken `Confirmation` rows** (`SELECT COUNT(*) … WHERE status = TAKEN`), surfaced as a `StateFlow<Int>` and rendered as "Doses taken: N". It is **not** `ComputeAdherenceUseCase` / `AdherenceCalculator`: no `Dose` denominator, no rolling-30-day window, no percentage. BR-008 / UC-009 (and the `Dose` read surface they need) remain **M-005**. This mirrors ADR-102's demo-vs-full-F-006 framing for the observe leg.
+
+#### Consequences
+
+The demo shows an honest Taken tally that increments 0 → 1 on confirm — sufficient to retire item (5) — while the Adherence calculation is deferred intact to M-005. No BR-008 test or J-005 BDD scenario is wired in T-011 (QA `Coverage Sufficient` confirmed there is no coverage obligation for the hardcoded tally). Status Proposed.
+
+---
+
+### ADR-106: `DemoViewModel` collects the observe `Flow` via `stateIn(WhileSubscribed(5_000), 0)`; the AC-005 Compose test runs in the debug-only unit-test source set; `:app` test classpath gains Truth + coroutines-test + compose-ui-test-junit4
+
+- Date: 2026-06-10
+- Status: Proposed
+- Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-011 (M-002); `_context/04 § UI framework (StateFlow)`; `_context/05 § Test Portfolio`; `_context/08 § In Scope / § Likely Change Surface / § Acceptance Criteria (AC-004 / AC-005)`; QA note (1) (handoff 2026-06-10 QA + Security)
+
+#### Context
+
+The observe leg needs the use-case `Flow<Int>` collected into a presentation `StateFlow<Int>` rendered by `DemoScreen`. The realistic demo flow is *tap "Take" from the lock screen → open the app*, by which point the screen may have been off-screen or the process restarted. Separately, the new `:app` tests need `runTest` + Truth + a Compose UI test runner that `:app`'s **unit**-test classpath did not yet carry (it had only JUnit4 / Robolectric / Roborazzi; `compose-ui-test-junit4` was `androidTestImplementation` only), and Robolectric Compose rendering needs the `compose-ui-test-manifest` `ComponentActivity`, which is merged only into the **debug** variant.
+
+#### Decision
+
+(1) `confirmedCount = observeConfirmedDoseCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)` — `WhileSubscribed` observes the Room `Flow` only while the screen is subscribed and **re-reads the durable row on re-subscription**, so the count is correct after backgrounding or process death (the central reason the observe seam is the Room `Flow` — ADR-104). (2) **Test classpath:** add `testImplementation(libs.truth)`, `testImplementation(libs.kotlinx.coroutines.test)`, `testImplementation(libs.compose.ui.test.junit4)` to `:app` — all pre-existing version-catalog aliases used elsewhere; the packet's Likely Change Surface named only `coroutines-test`, so Truth + `ui-test-junit4` are surfaced here as additions implied by the AC-004 / AC-005 test forms (Truth assertions; `onNodeWithText`). (3) **`DemoScreenCounterRobolectricTest` lives in `app/src/testDebug/kotlin/…`** (debug-only unit-test source set), not `src/test`, so `createComposeRule()`'s `ComponentActivity` resolves under `:app:testReleaseUnitTest` — the alternatives would ship a test activity in the release APK or disable release unit tests. The pure-JVM `DemoViewModelTest` stays in `src/test` and runs on both variants. (4) Per QA note (1), the `StateFlow` / `Flow` assertions use `flow.first()` / `.value`-after-write — **no Turbine** added.
+
+#### Consequences
+
+`viewModelScope` + `WhileSubscribed` is the canonical Compose state bridge (file 04). The `src/testDebug` placement is a deviation from the packet's stated `src/test` path for AC-005, surfaced here and in the close handoff; AC-005 still passes (debug variant) and asserts counter text/semantics (no pixel baseline). The three test deps are test-only (no release-APK or production-graph impact; the merged manifest stays byte-unchanged, no new permissions). The `src/testDebug` pattern is the precedent for the first real Roborazzi Compose test (M-003 / M-004). Status Proposed.
+
+---
+
+### ADR-105: `:adherence-tracking` first read/observe path — `observeConfirmedDoseCount(): Flow<Int>` port + observable `@Query` (typed converter-aware param) + thin `ObserveConfirmedDoseCountUseCase`; read errors surface to the collector; no new read-path failure test
+
+- Date: 2026-06-10
+- Status: Proposed
+- Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-011 (M-002); `_context/04 § ConfirmationRepository / § layer table`; `_context/06 § F-013` (read-path shape precedent); `_context/05 § Test Portfolio` (Integration row); QA note (2) (handoff 2026-06-10 QA + Security); ADR-099 (write path)
+
+#### Context
+
+T-011 adds the project's first read/observe path on the `Confirmation` aggregate. The DAO must observe the Taken count and re-emit on write; the `status` predicate must match how `ConfirmationConverters` stores the enum; and Presentation must depend on the Application port, not the Room adapter (file 04 § layer table). The Integration-row "happy- and failure-path per adapter" rule had to be reconciled with a pure read method.
+
+#### Decision
+
+Add `ConfirmationRepository.observeConfirmedDoseCount(): Flow<Int>` (read surface; the existing `recordFromNotification` write surface is untouched). Implement it with a **non-suspending observable** `ConfirmationDao.observeTakenCount(status: ConfirmationStatus): Flow<Int>` (`SELECT COUNT(*) … WHERE status = :status`); the `status` parameter is **typed `ConfirmationStatus` and bound through the registered `ConfirmationConverters`** (`statusToName`), so it round-trips exactly as the column was written — no stringly-typed `.name` at the call site (the AC-003 TAKEN→SKIPPED→TAKEN integration test pins the round-trip and proves `Flow` re-emission on write). `RoomConfirmationRepository.observeConfirmedDoseCount()` delegates to the DAO (no `withTransaction` — a read). `ObserveConfirmedDoseCountUseCase` is a thin Application pass-through (`operator fun invoke(): Flow<Int> = repository.observeConfirmedDoseCount()`) so Presentation depends on the use case, not the adapter. **The read path surfaces query errors to the collector** (no exception-to-`Result` mapping; the cold Room `Flow` is collected by the ViewModel in a supervised scope). **No new read-path failure test** is added (QA note (2)): the `ConfirmationRepository` per-adapter failure-path obligation is already satisfied by the T-010 write-path tests (`ConfirmDoseFromReminderUseCaseTest` / `ConfirmFromNotificationReceiverRobolectricTest`).
+
+#### Consequences
+
+`:adherence-tracking` gains its first read port method and first query use case; the read I/O stays in `:infrastructure` behind the Application port (Konsist `NoUpwardLayerDependencyRule` green). The thin use case is covered by AC-002, keeping the ADR-103 combined ≥ 90 % gate green; the DAO/repository read members are `infrastructure.*` (no `%` threshold; exercised by AC-003). The read-path-error-to-collector behavior is intentionally untested in T-011 (recorded per QA note (2)); BR-008 and the full F-013 read path remain M-005 / M-006. Status Proposed.
+
+---
+
+### ADR-104: T-011 observe seam — the on-screen counter observes the persisted `Confirmation` via a Room `Flow`, not the in-memory `DoseConfirmed` event; supersedes ADR-100's "first `DoseConfirmed` consumer" expectation
+
+- Date: 2026-06-10
+- Status: Proposed
+- Owners: Developer; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-011 (M-002); `_context/08 § Architect Decision Required`; `_context/07 § Milestone Register M-002` Done-When item (5) + milestone goal ("Room → StateFlow → Compose re-render"); `_context/04 § DomainEventPublisher`; **refines/supersedes the "first `DoseConfirmed` consumer" clause of ADR-100** (ADR-100 otherwise stands `Accepted`)
+
+#### Context
+
+M-002 item (5) ("Compose **observes the Confirmation** via `StateFlow`" + the milestone goal's "Room → StateFlow → Compose re-render") and ADR-100 ("T-011 is the **first `DoseConfirmed` consumer**") pulled toward two surfaces: (α) observe the in-memory `DoseConfirmed` event off the `:core` `DomainEventPublisher`, or (C) observe the persisted `Confirmation` via a Room `Flow`. The packet recorded the decision with (C) recommended and required the Developer to ratify the chosen seam as an ADR at execution time.
+
+#### Decision
+
+Adopt **(C)**: the counter observes the persisted `Confirmation` via a `ConfirmationDao` `Flow<Int>` query → `ObserveConfirmedDoseCountUseCase` → `DemoViewModel` `StateFlow<Int>` → `DemoScreen`. (C) literally satisfies "observes the Confirmation" + "Room → StateFlow → Compose re-render"; it is **durable across process death** (the tap-from-lock-screen → open-app flow may kill the demo process — a Room `Flow` re-reads the row on re-subscription, an in-memory event would be gone); and a SQL `COUNT` is **inherently idempotent**, dodging the `InProcessEventBus` `REPLAY = 8` double-count/dedupe problem of (α). (C) proved strictly simpler than T-010's seam, so the (α) fallback was not needed. This **refines/supersedes ADR-100's expectation** that T-011 is the "first `DoseConfirmed` consumer": `DoseConfirmed` is still **emitted** by `ConfirmDoseFromReminderUseCase` but is **not consumed** in T-011; its first real cross-module consumer moves to M-005 (Adherence-cache invalidation / recompute trigger). Per the `_context/09` "add a superseding ADR, don't rewrite history" rule and the 2026-06-10 gatekeeper ADR-ratification note, ADR-100 stays `Accepted` and is **not edited**; only its "first consumer" clause is superseded here.
+
+#### Consequences
+
+The observe seam is the milestone-faithful "Room → StateFlow" surface and the precedent for the real M-005 / M-006 read path (`_context/06 § F-013` `observeTodayDoses` is the same `Flow` → `StateFlow` → Compose shape). `DoseConfirmed` remains an emitted-but-unconsumed-in-MVP event (no behavior change to existing emitters). The `:app::presentation → :adherence-tracking::application` dependency is legal (`:app` may depend on every feature module; `NoCrossFeatureDomainImportRule` unaffected). Status Proposed.
+
+---
+
 ### ADR-103: `:adherence-tracking` Kover thresholds collapse to a single ≥ 90 % combined Domain+Application gate (ADR-086 constraint); end-to-end receiver test uses per-module test `@Database`s + a test-only `:notifications → :adherence-tracking` dependency + receiver `@VisibleForTesting` seams
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); `_context/08_active_task_packet.md § In Scope / § Acceptance Criteria (AC-002 / AC-003 / AC-004 / AC-004a / AC-006)`; ADR-086 (report-level Kover filters); ADR-091 (`@DaggerGenerated` exclusion)
 
@@ -44,7 +128,7 @@ The packet specifies two `:adherence-tracking` Kover thresholds — Domain ≥ 9
 ### ADR-102: Demo-vs-full-F-006 gap — T-010 persists only the `Confirmation` (no `Dose.status` co-update, no `DoseRepository`, `UnknownDose` deferred); first at-rest persistence of `Confidential` data accepts ADR-043 plain-text Room
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); `_context/06 § F-006`; `_context/04 § Architecture Risks`; `_context/13 § THR-010 / § 9 Q1`; ADR-043; supersedes nothing
 
@@ -65,7 +149,7 @@ The demo writes a `Confirmation` and dismisses the notification but does not fli
 ### ADR-101: ADR-049 rule (ii) wired — sensitive `data class` redacted `toString()` Konsist rule; ADR-087 open question resolved (scope = feature `.domain` + `:core::event` data classes; non-PII `:core` types exempt); `Result.Err.UnexpectedNotificationPayload` added
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); resolves **ADR-087**; ADR-081 (code-surface-dependent rule wiring); ADR-049 (the two redaction rules); ADR-031; `_context/13 §§ Observability / Information Disclosure`
 
@@ -86,7 +170,7 @@ Wire rule (ii) as a new `:core` Konsist rule `DataClassRedactedToStringRule` (+ 
 ### ADR-100: `:core::event::DoseConfirmed` added to the `DomainEvent` hierarchy — carries Confidential `status`, redacted `toString()`, dedupe key `(confirmationId, confirmedAt)`, no cross-module consumer in MVP
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); `_context/02 § Domain Events`; `_context/06 § F-006 step 7 / line 35`; ADR-089 (event bus); ADR-101 (rule (ii))
 
@@ -107,7 +191,7 @@ The event hierarchy grows additively (no behavior change to existing subscribers
 ### ADR-099: `:adherence-tracking` `Confirmation` aggregate + `RoomConfirmationRepository` — 1:1 unique index on `doseId` with INSERT-OR-REPLACE idempotency, `withTransaction`, base-`RoomDatabase` injection; first `:adherence-tracking` production code
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); `_context/04 § ConfirmationRepository / § Local persistence`; `_context/06 § Idempotency rule / § Ordering rule / § Retry rule`; `_context/02 row Confirmation` / `BR-005`; ADR-043 (plain-text Room)
 
@@ -128,7 +212,7 @@ The `confirmation` table (PK `confirmationId`, unique index on `doseId`) is the 
 ### ADR-098: `NemoPillDatabase` single-instance Room `@Database` in `:app` (root package, version 1, `exportSchema = true`); Room codegen via KSP at the `@Database` site only — `annotationProcessor` → KSP switch with minimal placement
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); `_context/04 § Architecture Risks`; `_context/06 § Section 1 / Section 2`; ADR-083 / ADR-091 (KSP minimal placement); `_context/08 § AC-005`
 
@@ -149,7 +233,7 @@ The empirically-confirmed minimal KSP placement (Room compiler in `:app` + per-t
 ### ADR-097: Receiver→use-case seam — a neutral `:core` `NotificationConfirmationGateway` port bound in `:app` (option C); shared confirmation vocabulary (`ConfirmationId` / `ConfirmationStatus` / `ConfirmationSource`) relocated to `:core`
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-010 (M-002); `_context/08_active_task_packet.md § Architect Decision Required`; `_context/04 § Gradle dependency graph (line 170)`; `_context/06 § F-006`; `_context/13 § "PendingIntent → notification-action receiver"`; supersedes nothing; relates ADR-089 (`DomainEventPublisher` in `:core`)
 
@@ -170,7 +254,7 @@ Both feature modules depend only on `:core`; neither imports the other (the stri
 ### ADR-096: `:notifications` owns its notification string resources and Kover application-layer threshold; channel name/description + demo copy live in `:notifications/res`, not `:app/res`
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Likely Change Surface`; `_context/11 § Notification channel display names`; ADR-086
 
@@ -191,7 +275,7 @@ Honors file 11's "no inline literals" intent and the module graph simultaneously
 ### ADR-095: `ConfirmFromNotificationReceiver` is a synchronous logging-and-dismiss stub in T-009; typed parse → Confirmation write (and its `goAsync()`) deferred to T-010
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Explicitly Out Of Scope`; `_context/06 § Section 2 / § Timeout rule`; `_context/13 § THR-002`
 
@@ -212,7 +296,7 @@ Tapping "Take"/"Skip" logs and dismisses but writes nothing in T-009. T-010 repl
 ### ADR-094: On-time Reminder inline actions — two `FLAG_IMMUTABLE` broadcast `PendingIntent`s ("Take"=TAKEN / "Skip"=SKIPPED) to an `exported="false"` receiver; content-tap resolves the launcher Intent at runtime
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope`; `_context/11 § Notification (inline action)`; `_context/06 § Section 2`; ADR-023
 
@@ -233,7 +317,7 @@ Three `FLAG_IMMUTABLE` PendingIntents per notification, all asserted by the Robo
 ### ADR-093: `NotificationManagerCompat` adapter + `reminder_on_time` channel created at `IMPORTANCE_HIGH`
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/04 § NotificationPort`; `_context/06 § Section 1 / Section 2`; `_context/11 § BR-010 channel-importance`; BR-004
 
@@ -254,7 +338,7 @@ Only `reminder_on_time` is created in T-009 (other BR-010 channels are M-004). T
 ### ADR-092: Dagger 2.51.1 cannot read Kotlin 2.1.0 metadata on the members-injection (`@Inject` field) validation path; avoid field injection (use `EntryPointAccessors`); durable fix is a Hilt version bump routed forward
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § Risks`; ADR-083; `_context/04 § DI`
 
@@ -275,7 +359,7 @@ No `@Inject` fields anywhere until the Hilt bump lands; constructor injection an
 ### ADR-091: Broadcast-receiver Hilt injection via `EntryPointAccessors` + `@EntryPoint`; `:scheduling` gains the Hilt Gradle plugin + KSP (refines ADR-083) and excludes Dagger-generated classes from its Kover gate
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Risks`; ADR-083; ADR-086
 
@@ -296,7 +380,7 @@ A manifest `BroadcastReceiver` is OS-instantiated and cannot be constructor-inje
 ### ADR-090: Demo `ReminderAlarmReceiver` publishes `ReminderFired(ON_TIME)` unconditionally on the event bus via a bounded `goAsync()` scope; the precondition-checked `FireReminderUseCase` (file 06 § F-005 steps 2–3) is deferred to M-004
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/08_active_task_packet.md § In Scope / Out Of Scope`; `_context/06 § F-005 / § Timeout rule`; BR-010
 
@@ -317,7 +401,7 @@ The walking-skeleton demo always fires `ON_TIME`. The real precondition-checked 
 ### ADR-089: First `:core::event` production code — `InProcessEventBus` is a `MutableSharedFlow<DomainEvent>` (replay 8, DROP_OLDEST), bound as an `@Singleton`; `:core` takes `kotlinx-coroutines-core` as its one production dependency
 
 - Date: 2026-06-07
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-009 (M-002); `_context/04 § DomainEventPublisher`; `_context/06 § Ordering rule / Idempotency rule`; `_context/02 § Domain Events`
 
@@ -338,7 +422,7 @@ The `DomainEvent` hierarchy is seeded with `ReminderFired` only; the other file-
 ### ADR-088: ktlint `standard:function-naming` suppressed per-`@Composable` (PascalCase Compose convention); repo-wide `.editorconfig` exemption deferred to the Compose-proliferation milestone
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — DemoScreen`; ADR-044 (ktlint)
 
@@ -359,7 +443,7 @@ Each future screen-level composable repeats the local suppression. When Compose 
 ### ADR-087: ADR-049 routing at T-008 — rule (i) wired and exercised; rule (ii) deferred to the first sensitive Domain `data class`; `:core` `Result` scoping question surfaced for the rule-(ii) task
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — ADR-049 routing`; ADR-081; ADR-049; ADR-031
 
@@ -380,7 +464,7 @@ Rule (i) is live and CI-enforced (arch-conformance stage). Rule (ii) remains unw
 ### ADR-086: Kover 0.8.3 per-package coverage gates via report-level `filters` (per-rule filters forbidden in 0.8.x); resolves the ADR-078 deferral; `:scheduling` infra/presentation excluded from the module coverage report
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — Activate Kover thresholds`; ADR-078; `_context/05 § Coverage thresholds`
 
@@ -401,7 +485,7 @@ Gates are real, non-vacuous, and met with margin (measured at T-008: `:core` 5/5
 ### ADR-085: `ReminderAlarmReceiver` relocated from `:app` to `:scheduling::infrastructure`
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope`; `_context/04 § :scheduling`; ADR-023
 
@@ -422,7 +506,7 @@ The adapter references the receiver within its own module; no cross-module depen
 ### ADR-084: Demo scheduling-adapter design — `setAlarmClock`, idempotent request-code-by-`doseId`, `FLAG_IMMUTABLE` on every `PendingIntent`, runtime-resolved `showIntent`
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/04 § Exact-time scheduling / § SchedulerPort`; `_context/01` assumption (1); BR-004; ADR-023; ADR-031
 
@@ -443,7 +527,7 @@ Idempotency is the adapter's responsibility via the stable request code (BR-004)
 ### ADR-083: KSP + Hilt Gradle plugin wiring; minimal placement — Hilt + KSP codegen in `:app` only; `:scheduling` carries the `hilt-android` library only
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — First Hilt + KSP DI graph`; `_context/04 § Dependency injection`; ADR-075
 
@@ -464,7 +548,7 @@ Add `ksp = "2.1.0-1.0.29"` (matched exactly to the catalog's Kotlin 2.1.0) and t
 ### ADR-082: Coroutines (1.10.1) and Truth (1.4.4) added to the version catalog
 
 - Date: 2026-06-05
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-008 (M-002); `_context/08_active_task_packet.md § In Scope — catalog dependencies`; `_context/04 § Async/concurrency / § Testing toolchain`; `_context/05 § Dependency and supply chain`
 
@@ -607,7 +691,7 @@ No threshold on `*.infrastructure.*` or `*.presentation.*` subpackages per `_con
 ### ADR-077: Cross-environment role execution — Cowork hosts Architect / PM / Proposal-Mode turns; Claude Code hosts Apply-Mode Developer turns; `CLAUDE.md` remains the single environment-agnostic instruction surface and the file-based approval gate is authoritative in both
 
 - Date: 2026-06-01
-- Status: Proposed
+- Status: Accepted
 - Owners: Isidro Rodriguez (Human gatekeeper); Architect
 - Related milestone or task: No active task packet — operating-model decision recorded at the Human gatekeeper's request; `CLAUDE.md § Operating Modes`, `§ Multi-Agent Roles`, `§ Skills`; originates from the 2026-06-01 Cowork conversation on whether to migrate code-writing to Claude Code
 

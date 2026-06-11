@@ -7,4 +7,7 @@
     <string name="demo_reminder_idle">No reminder scheduled yet</string>
     <string name="demo_reminder_scheduled">Reminder scheduled for %1$s</string>
     <string name="demo_reminder_error">Could not schedule the reminder</string>
+
+    <!-- T-011 demo screen (M-002 walking-skeleton, observe leg) — the on-screen "doses Taken" tally -->
+    <string name="demo_confirmed_count">Doses taken: %1$d</string>
 </resources>
