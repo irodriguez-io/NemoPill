@@ -67,6 +67,14 @@ android {
     // See app/src/main/res/xml/data_extraction_rules.xml
 }
 
+// Room schema export (file 06 § Section 2). The KSP-based Room processor writes the committed
+// schema JSON to app/schemas/io.nemopill.app.NemoPillDatabase/<version>.json on every :app
+// compile; 1.json is checked in with T-010. Required because NemoPillDatabase sets
+// exportSchema = true (a missing location would fail the build / silently skip export).
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(project(":core"))
     implementation(project(":medication-management"))
@@ -82,6 +90,14 @@ dependencies {
     // DI graph (T-008): Hilt runtime + KSP-driven codegen lives here (first @Module + entry points).
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // Room (T-010): the single NemoPillDatabase @Database lives here. KSP-driven Room codegen
+    // (the DAO impls aggregated from the feature modules' @Dao interfaces) runs in :app — the
+    // module that owns the @Database (file 04 single-instance design; T-010 ADR minimal KSP
+    // placement). room-ktx supplies the withTransaction extension used by RoomConfirmationRepository.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     // Coroutines — viewModelScope drives the suspend use case off the demo screen.
     implementation(libs.kotlinx.coroutines.android)

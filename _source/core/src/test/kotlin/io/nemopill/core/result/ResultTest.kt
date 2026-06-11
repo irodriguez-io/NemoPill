@@ -35,4 +35,15 @@ class ResultTest {
         assertThat(Result.Err.Unexpected("a")).isEqualTo(Result.Err.Unexpected("a"))
         assertThat(Result.Err.Unexpected("a")).isNotEqualTo(Result.Err.Unexpected("b"))
     }
+
+    @Test
+    fun `UnexpectedNotificationPayload is a singleton Err with no fields`() {
+        val err: Result<Unit, Result.Err> = Result.Err.UnexpectedNotificationPayload
+        assertThat(err).isEqualTo(Result.Err.UnexpectedNotificationPayload)
+        assertThat(err).isInstanceOf(Result.Err::class.java)
+        assertThat(err).isNotEqualTo(Result.Err.Unexpected("anything"))
+        // Carries no field values — its toString cannot leak Patient data (ADR-087 exempt).
+        assertThat(Result.Err.UnexpectedNotificationPayload.toString())
+            .isEqualTo("UnexpectedNotificationPayload")
+    }
 }
