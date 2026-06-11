@@ -20,7 +20,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 val state by viewModel.uiState.collectAsState()
-                DemoScreen(state = state, onSchedule = viewModel::schedule)
+                val confirmedCount by viewModel.confirmedCount.collectAsState()
+                DemoScreen(
+                    state = state,
+                    confirmedCount = confirmedCount,
+                    onSchedule = viewModel::schedule,
+                )
             }
         }
     }

@@ -14,9 +14,11 @@ import androidx.compose.ui.unit.dp
 import io.nemopill.app.R
 
 /**
- * The single demo screen (M-002 walking-skeleton, scheduling leg): one "Schedule the Demo
- * Reminder" button plus a status line bound to [DemoUiState]. Stateless — the activity owns
- * the [DemoViewModel] and passes state down, keeping this composable trivial to render.
+ * The single demo screen (M-002 walking skeleton): one "Schedule the Demo Reminder" button, a
+ * status line bound to [DemoUiState] (scheduling leg), and the "doses Taken" counter bound to
+ * [confirmedCount] (the item-(5) observe leg — recomposes 0 → 1 when a `Confirmation` persists).
+ * Stateless — the activity owns the [DemoViewModel] and passes both `state` and `confirmedCount`
+ * down, keeping this composable trivial to render and to test.
  *
  * `@Suppress(function-naming)`: Compose UI functions use PascalCase by convention, which
  * the ktlint standard rule does not auto-exempt in this version.
@@ -25,6 +27,7 @@ import io.nemopill.app.R
 @Composable
 fun DemoScreen(
     state: DemoUiState,
+    confirmedCount: Int,
     onSchedule: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -37,6 +40,7 @@ fun DemoScreen(
             Text(text = stringResource(R.string.schedule_demo_reminder))
         }
         Text(text = statusLine(state))
+        Text(text = stringResource(R.string.demo_confirmed_count, confirmedCount))
     }
 }
 

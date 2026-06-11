@@ -27,6 +27,8 @@ import io.nemopill.notifications.R
 import io.nemopill.notifications.STATUS_TAKEN
 import io.nemopill.notifications.notificationIdFor
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -192,6 +194,10 @@ class ConfirmFromNotificationReceiverRobolectricTest {
     private object FailingConfirmationRepository : ConfirmationRepository {
         override suspend fun recordFromNotification(confirmation: Confirmation): Result<Unit, Result.Err> =
             Result.Err.Unexpected("simulated transaction failure")
+
+        // T-011 added the read/observe port method; this write-path failure fixture never exercises
+        // it (the receiver tests assert the persistence path, not the on-screen counter).
+        override fun observeConfirmedDoseCount(): Flow<Int> = flowOf(0)
     }
 
     private companion object {

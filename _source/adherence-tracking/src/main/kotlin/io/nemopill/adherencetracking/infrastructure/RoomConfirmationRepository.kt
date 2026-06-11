@@ -4,7 +4,9 @@ import androidx.room.RoomDatabase
 import androidx.room.withTransaction
 import io.nemopill.adherencetracking.application.ConfirmationRepository
 import io.nemopill.adherencetracking.domain.Confirmation
+import io.nemopill.core.confirm.ConfirmationStatus
 import io.nemopill.core.result.Result
+import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -27,6 +29,12 @@ private const val UNEXPECTED_PERSIST_FAILURE = "Failed to persist the confirmati
  * exceptions are caught at the boundary and mapped to [Result.Err.Unexpected] with a static,
  * non-PII message (file 04 § Error handling); the `CancellationException` rethrow keeps structured
  * concurrency correct.
+ *
+ * T-011 adds the read leg: [observeConfirmedDoseCount] delegates to the DAO's observable
+ * `Flow<Int>` Taken-count query (no `withTransaction` — a read; Room re-emits on table change).
+ * It is already an `Int`, so nothing is mapped; query errors surface to the collector (no
+ * exception-to-`Result` mapping on the observe path — T-011 ADR), and the ViewModel collects it in
+ * a supervised scope so a failed emission cannot crash the process.
  */
 class RoomConfirmationRepository
     @Inject
@@ -53,4 +61,6 @@ class RoomConfirmationRepository
             } catch (e: Exception) {
                 Result.Err.Unexpected(UNEXPECTED_PERSIST_FAILURE)
             }
+
+        override fun observeConfirmedDoseCount(): Flow<Int> = dao.observeTakenCount(ConfirmationStatus.TAKEN)
     }
