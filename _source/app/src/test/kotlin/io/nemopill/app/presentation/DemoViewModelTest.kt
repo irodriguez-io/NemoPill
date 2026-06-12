@@ -7,6 +7,7 @@ import io.nemopill.adherencetracking.domain.Confirmation
 import io.nemopill.core.id.DoseId
 import io.nemopill.core.port.ClockPort
 import io.nemopill.core.result.Result
+import io.nemopill.scheduling.application.PendingReminderStore
 import io.nemopill.scheduling.application.ScheduleDemoReminderUseCase
 import io.nemopill.scheduling.application.SchedulerPort
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +55,7 @@ class DemoViewModelTest {
 
     private fun viewModel(repository: ConfirmationRepository): DemoViewModel =
         DemoViewModel(
-            ScheduleDemoReminderUseCase(FixedClock(now), NoOpScheduler()),
+            ScheduleDemoReminderUseCase(FixedClock(now), NoOpScheduler(), NoOpPendingReminderStore()),
             ObserveConfirmedDoseCountUseCase(repository),
         )
 
@@ -112,6 +113,18 @@ class DemoViewModelTest {
         override suspend fun cancel(doseId: DoseId) = Unit
 
         override suspend fun cancelAll() = Unit
+    }
+
+    /** T-012: the scheduling use case now persists the target; the demo-screen tests don't assert it. */
+    private class NoOpPendingReminderStore : PendingReminderStore {
+        override suspend fun savePendingReminder(
+            doseId: DoseId,
+            at: Instant,
+        ) = Unit
+
+        override suspend fun pendingReminders(): Map<DoseId, Instant> = emptyMap()
+
+        override suspend fun clear(doseId: DoseId) = Unit
     }
 
     private class FixedClock(private val instant: Instant) : ClockPort {

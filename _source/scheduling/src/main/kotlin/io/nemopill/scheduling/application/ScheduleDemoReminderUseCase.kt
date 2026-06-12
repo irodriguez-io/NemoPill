@@ -19,6 +19,12 @@ private const val UNEXPECTED_SCHEDULE_FAILURE = "Failed to schedule the demo rem
  * ports; this `suspend` function is the only side-effecting layer (the Domain stays pure
  * and non-suspending).
  *
+ * **T-012 amendment (boot-survival leg, file 06 § F-011):** after the alarm is armed, the target
+ * is persisted to [PendingReminderStore] so a device reboot during the wait window can re-arm it
+ * (alarms die on reboot; see [ReArmDemoReminderUseCase]). The write happens **after**
+ * `scheduleReminder` returns and **before** `Result.Ok` — the alarm is the source of truth and is
+ * already armed; a store-write failure maps to [Result.Err.Unexpected] via the same two-tier policy.
+ *
  * Two-tier error policy (file 04): an adapter-boundary exception is caught and mapped to a
  * [Result.Err.Unexpected] with a static, non-PII message. The `CancellationException`
  * rethrow keeps structured concurrency correct — and is T-008's first production `throw`,
@@ -29,11 +35,13 @@ class ScheduleDemoReminderUseCase
     constructor(
         private val clock: ClockPort,
         private val scheduler: SchedulerPort,
+        private val pendingReminderStore: PendingReminderStore,
     ) {
         suspend operator fun invoke(): Result<Instant, Result.Err> =
             try {
                 val target = clock.now().plus(DEMO_REMINDER_OFFSET)
                 scheduler.scheduleReminder(DEMO_DOSE_ID, target)
+                pendingReminderStore.savePendingReminder(DEMO_DOSE_ID, target)
                 Result.Ok(target)
             } catch (ce: CancellationException) {
                 throw ce
