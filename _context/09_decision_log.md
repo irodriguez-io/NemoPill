@@ -20,10 +20,94 @@
 
 ## Current State
 
+### ADR-111: `BootCompleteReceiver` boot re-arm uses a 5 s `withTimeout` cap (`REARM_TIMEOUT_MS = 5_000L`); 8 s is a ceiling, not a floor, and trivial-work receivers may use a tighter cap
+
+- Date: 2026-06-11
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-012 (M-002); `_context/08 § In Scope / § Acceptance Criteria`; `_context/10 § Availability And Reliability`; `_context/12 § Configuration And Secrets row (c)`; `_context/06 § Timeout rule`; QA + Security finding (1) (handoff 2026-06-11T23:30Z → Developer action item (1)); mirrors `ReminderAlarmReceiver.PUBLISH_TIMEOUT_MS`
+
+#### Context
+
+`_context/10 § Availability And Reliability` and `_context/12 § Configuration And Secrets row (c)` state the OS-callback receiver rule generically as `withTimeout(8_000)` — a 2-second margin under Android's ~10 s hard receiver kill. The packet specified `REARM_TIMEOUT_MS = 5_000` ("mirror the T-009 `ReminderAlarmReceiver`"). The deployed code already holds **two** values — `ReminderAlarmReceiver.PUBLISH_TIMEOUT_MS = 5_000L` (fast in-memory publish) and `ConfirmFromNotificationReceiver.confirmTimeoutMillis = 8_000L` (suspend Room write) — so the file-10/12 blanket "8_000" is already not literally true in source. QA + Security surfaced this as a documented-fact conflict to resolve by ADR rather than absorb silently.
+
+#### Decision
+
+`BootCompleteReceiver` uses `REARM_TIMEOUT_MS = 5_000L`. The boot re-arm is **trivial work** — a fast app-private `SharedPreferences` read plus an idempotent `SchedulerPort.scheduleReminder` (no Room write, no network) — so it patterns after the publish-receiver precedent (`ReminderAlarmReceiver`), not the Room-write receiver (`ConfirmFromNotificationReceiver`). The reconciling rule: **`withTimeout(8_000)` in `_context/10`/`_context/12` is a *ceiling* (the safe upper bound under the ~10 s OS kill), not a floor.** A receiver whose work is provably fast may use a tighter cap; 5 s remains comfortably under both the 8 s ceiling and the OS kill. Per the packet's no-edit list, **file 10/12 prose is not edited in T-012** — this ADR carries the reconciliation; the file-10/12 prose touch-up (generalizing "8_000" to "≤ 8 000 ms, per-receiver") is a separate documentation-hygiene task for M-004/M-006.
+
+#### Consequences
+
+The three receivers now hold three intentional, documented caps (`ReminderAlarmReceiver` 5 s, `BootCompleteReceiver` 5 s, `ConfirmFromNotificationReceiver` 8 s), each justified by its work profile and all under the OS ceiling. Security's `Guardrail Pass` bounded-receiver guarantee holds (`goAsync()` + `withTimeout` + `finally { pending.finish() }`). On timeout overrun the receiver maps to `Result.Err.Unexpected` (static message — ADR-049 rule (i) green) and `finish()` still runs. Status Proposed.
+
+---
+
+### ADR-110: T-012 demo-vs-full gap — boot re-arm is a single-Dose, future-target-only happy-path stub; the multi-Dose F-011/F-012 boot re-registration, the F-008 missed-sweep, and the BR-010 1-hour-late-window re-arm are M-004
+
+- Date: 2026-06-11
+- Status: Proposed
+- Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-012 (M-002); `_context/08 § Explicitly Out Of Scope`; `_context/06 § F-011 / § F-012 / § F-008`; `_context/10 § Availability And Reliability`; `_context/02 § BR-004 / BR-009 / BR-010`; `_context/07 § Milestone Register M-002` Done-When item (6); QA + Security finding (4) (handoff 2026-06-11T23:30Z → Developer action item (4)); mirrors ADR-102 / ADR-107 (T-010 / T-011 demo-vs-full gaps)
+
+#### Context
+
+`_context/06 § F-011` describes the full boot-survival re-registration: on `BOOT_COMPLETED`, read **every** `pending` Dose where `now <= scheduledAt + 1h` (future **or** within the BR-010 late window) and re-register each, then trigger an F-008 wake-sweep that may surface an F-010 batched-summary. `_context/10 § Availability` attributes that "future **or within the 1 h late window**" boot re-registration jointly to "M-002 done-when item (6) **and** M-004 done-when item (7)". M-002 is the walking skeleton: there is no `Dose` table, no BR-009 horizon, no `DoseRepository` — only the single hardcoded `DEMO_DOSE_ID`.
+
+#### Decision
+
+T-012 implements only the **future-target half** of F-011 for a **single** demo Dose. `ReArmDemoReminderUseCase` re-arms each persisted entry whose `target > ClockPort.now()` and **no-ops a past-due target** (`target <= now`). There is **no wake-sweep**, **no batched-summary**, **no `pending → missed` transition**, and **no late-window (BR-010) re-arm**. Concretely: `_context/10 § Availability`'s "future **or within the 1 h late window**" boot re-registration is satisfied by M-002 item (6) for the **future half only**; the late-window / missed half is **M-004 item (7)** (F-008 missed-sweep + BR-010 + the full multi-Dose F-011/F-012 over the BR-009 horizon). The `PendingReminderStore` `Map<DoseId, Instant>` shape and the per-entry re-arm loop are deliberately the M-004-faithful shape so that path swaps the backing store (to the `Dose`/Room read) without touching `BootCompleteReceiver` or the use case.
+
+#### Consequences
+
+The manual hardware reboot test fires the demo Reminder at its **original** scheduled time (faithful to "re-arms the alarm"), retiring M-002 item (6). A reviewer expecting the full multi-Dose / missed-sweep behavior is told here and in the close handoff that it is M-004 — preventing `_context/10`'s joint row from being later misread as requiring the late-window re-arm in M-002. No BR-009/BR-010 logic, no `WorkManager`, no `Dose` materialization is added. Status Proposed.
+
+---
+
+### ADR-109: `BootCompleteReceiver` boot re-arm wiring — `EntryPointAccessors` + nested `BootEntryPoint` + `goAsync()` bounded `withTimeout` + `@VisibleForTesting` `useCaseProvider`/`onOutcomeForTest` seams (the `:app::boot` case of the receiver-injection rationale)
+
+- Date: 2026-06-11
+- Status: Proposed
+- Owners: Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-012 (M-002); `_context/08 § In Scope / § Acceptance Criteria (AC-005)`; `_context/06 § F-011 / § Timeout rule / § OS broadcast boundary`; `_context/05 § OS permissions / § Input validation`; `_context/13` THR-003; confirms/refines the T-009 receiver-`EntryPointAccessors` rationale (recorded in `ReminderAlarmReceiver`) and the T-010 `@VisibleForTesting` seam pattern (`ConfirmFromNotificationReceiver`, ADR-092/ADR-095)
+
+#### Context
+
+`BootCompleteReceiver` is a manifest-declared `BroadcastReceiver` in `:app::boot`, OS-instantiated and `exported="true"` (required only because the OS delivers the system-protected `BOOT_COMPLETED`). It cannot be constructor-injected, and the `@AndroidEntryPoint` field-injection path is unavailable for a `BroadcastReceiver` (its `super.onReceive` hook targets the abstract `BroadcastReceiver.onReceive`). It needs `ReArmDemoReminderUseCase` from the application's `SingletonComponent`, and AC-005 requires the receiver → use-case dispatch be unit-testable deterministically without Turbine.
+
+#### Decision
+
+Wire the receiver exactly like the two established receivers: (1) **action guard** — `if (intent.action != Intent.ACTION_BOOT_COMPLETED) return` (the only inbound parse; reads no untrusted extras, does no Patient-data work — file 05 § Input validation / THR-003); (2) **`goAsync()`** + a bounded `CoroutineScope(SupervisorJob() + Dispatchers.Default)`; (3) resolve the use case via `EntryPointAccessors.fromApplication(context.applicationContext, BootEntryPoint::class.java)` with a nested `@EntryPoint @InstallIn(SingletonComponent::class) interface BootEntryPoint { fun reArmDemoReminder(): ReArmDemoReminderUseCase }`; (4) run under `withTimeout(REARM_TIMEOUT_MS)` (ADR-111), `catch (te: TimeoutCancellationException)` → map to `Result.Err.Unexpected`, `catch (ce: CancellationException) { throw ce }`, `catch (e: Exception)` → map to `Result.Err.Unexpected`, `finally { pending?.finish(); onOutcomeForTest?.invoke(outcome) }`. The DI binding `PendingReminderStore -> SharedPreferencesPendingReminderStore` is added to the existing `:app` `SchedulingModule` (the same `@Module` that binds `SchedulerPort` — ADR-083). Two `@VisibleForTesting` seams mirror `ConfirmFromNotificationReceiver`: `useCaseProvider: (Context) -> ReArmDemoReminderUseCase` (production default = the `EntryPointAccessors` resolution) and `onOutcomeForTest`, invoked in `finally` **after** `finish()` so observing an outcome proves the bounded scope completed and `finish()` ran. All log lines are static, non-PII (ADR-031 / ADR-049 rule (i)).
+
+#### Consequences
+
+The boot graph resolves (`:app:assembleDebug` succeeds, no Hilt missing-binding). `BootCompleteReceiver` builds **no new `PendingIntent`** — the re-arm reuses `AlarmManagerSchedulerAdapter`'s `FLAG_IMMUTABLE` intents (ADR-023; `PendingIntentFlagImmutableRule` green). The `nullable pending?.finish()` covers a unit test invoking `onReceive` directly (no tracked `PendingResult`). The `:app::boot → :scheduling::application` dependency is legal (`:app` may depend on every feature). The seams are reset in the test's `@After` to avoid cross-test leakage. This is the third receiver on the same pattern, confirming it as the project's manifest-`BroadcastReceiver` injection idiom. Status Proposed.
+
+---
+
+### ADR-108: T-012 re-arm seam — re-arm at the original persisted time, backed by the project's first persisted scheduling state (a `:scheduling` `PendingReminderStore` port, SharedPreferences-backed, no Room schema)
+
+- Date: 2026-06-11
+- Status: Proposed
+- Owners: Architect; Developer; Security; Human gatekeeper (Isidro Rodriguez)
+- Related milestone or task: T-012 (M-002); `_context/08 § Architect Decision Required / § In Scope`; `_context/04 § SchedulerPort`; `_context/06 § F-011 / § F-012`; `_context/02 § BR-004`; `_context/13 § Data Classification`; `_context/07 § Milestone Register M-002` Done-When item (6); ADR-031 (no Patient data in trigger metadata); ADR-034 (app-private at-rest, removed on uninstall); ADR-043/ADR-023 (Room/PendingIntent posture)
+
+#### Context
+
+M-002 item (6) requires that a reboot during the demo Reminder's 10-minute wait "re-arms the alarm". `AlarmManager` exact alarms are cleared on reboot and nothing persisted the demo target, forcing two coupled choices the PM/Architect surfaced with recommendations for the Developer to ratify: (1) re-arm to a fresh `now + 10 min` (α) vs. re-arm at the **original** persisted time (C); (2) the persistence mechanism — SharedPreferences (α) vs. DataStore (β) vs. a Room key-value table (γ).
+
+#### Decision
+
+Adopt **(C) + SharedPreferences**. (1) **Re-arm at the original persisted time:** `ScheduleDemoReminderUseCase` persists the demo target `Instant` **after** `scheduleReminder` returns and **before** `Result.Ok`; on boot `ReArmDemoReminderUseCase` re-reads it and re-arms at that exact time **if still in the future**. Only (C) honors "re-arms the alarm" (re-arm-fresh would restart the countdown and make the hardware reboot test fire at the wrong time) and it precedents the real M-004 boot path (re-arm persisted Doses at their stored `scheduledAt`, `_context/06 § F-011/F-012`). (2) **SharedPreferences:** a new `:scheduling::application` `PendingReminderStore` port (`savePendingReminder` / `pendingReminders(): Map<DoseId, Instant>` / `clear`) with a `:scheduling::infrastructure` `SharedPreferencesPendingReminderStore` adapter storing `doseId.value -> Instant.toEpochMilli()` (`Long`) in an app-private prefs file `io.nemopill.scheduling.pending_reminders`. **Room (γ) is rejected** — it would force a `NemoPillDatabase` schema change (`version` bump, `2.json`, a migration) and a heavier review, contradicting the no-new-Room-schema M-002 ethos and AC-006. **DataStore (β)** is the documented forward alternative (it adds a dependency for one `Long`; revisit when a second async-preference need arises). The persisted value is a **non-PII** `DoseId → epochMilli` pair — the `_context/13` `Internal` / trigger-metadata class, not `Confidential` — so the file-05 `EncryptedSharedPreferences` rule and ADR-049 rule (ii) do not engage (ADR-031). Idempotent re-arm by `DoseId` (BR-004).
+
+#### Consequences
+
+T-012 stands up the project's **first persisted scheduling state** and **first at-rest `:scheduling` store**, behind a port so the M-004 multi-Dose boot path swaps the backing implementation (e.g. to the `Dose`/Room read) without touching `BootCompleteReceiver` or `ReArmDemoReminderUseCase`. No Room schema change (`version` stays `1`, no `2.json`, AC-006 verified); no new permission; no network. A store-write failure in `ScheduleDemoReminderUseCase` surfaces as `Result.Err.Unexpected` (the alarm is already armed — acceptable for the demo). **Forward debt (routed, not fixed here):** the F-014 hard-delete path (`_context/06`, M-006) must be extended to clear this new at-rest surface for deletion-completeness — the value is `Internal` and removed on uninstall (ADR-034), so this is not a T-012 defect; carried to M-004/M-006 per the 2026-06-11T23:30Z review finding (2). Status Proposed.
+
+---
+
 ### ADR-107: T-011 demo-vs-full gap — the on-screen counter is a raw "doses Taken" tally, not the BR-008 Adherence percentage (M-005)
 
 - Date: 2026-06-10
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-011 (M-002); `_context/08 § In Scope / § Explicitly Out Of Scope`; `_context/02 § BR-008`; `_context/03 § UC-009`; `_context/07 § Milestone Register M-002` Done-When item (5); mirrors ADR-102 (T-010 demo-vs-full-F-006 gap)
 
@@ -37,14 +121,14 @@ T-011's counter is a **raw count of Taken `Confirmation` rows** (`SELECT COUNT(*
 
 #### Consequences
 
-The demo shows an honest Taken tally that increments 0 → 1 on confirm — sufficient to retire item (5) — while the Adherence calculation is deferred intact to M-005. No BR-008 test or J-005 BDD scenario is wired in T-011 (QA `Coverage Sufficient` confirmed there is no coverage obligation for the hardcoded tally). Status Proposed.
+The demo shows an honest Taken tally that increments 0 → 1 on confirm — sufficient to retire item (5) — while the Adherence calculation is deferred intact to M-005. No BR-008 test or J-005 BDD scenario is wired in T-011 (QA `Coverage Sufficient` confirmed there is no coverage obligation for the hardcoded tally). Status Accepted.
 
 ---
 
 ### ADR-106: `DemoViewModel` collects the observe `Flow` via `stateIn(WhileSubscribed(5_000), 0)`; the AC-005 Compose test runs in the debug-only unit-test source set; `:app` test classpath gains Truth + coroutines-test + compose-ui-test-junit4
 
 - Date: 2026-06-10
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-011 (M-002); `_context/04 § UI framework (StateFlow)`; `_context/05 § Test Portfolio`; `_context/08 § In Scope / § Likely Change Surface / § Acceptance Criteria (AC-004 / AC-005)`; QA note (1) (handoff 2026-06-10 QA + Security)
 
@@ -58,14 +142,14 @@ The observe leg needs the use-case `Flow<Int>` collected into a presentation `St
 
 #### Consequences
 
-`viewModelScope` + `WhileSubscribed` is the canonical Compose state bridge (file 04). The `src/testDebug` placement is a deviation from the packet's stated `src/test` path for AC-005, surfaced here and in the close handoff; AC-005 still passes (debug variant) and asserts counter text/semantics (no pixel baseline). The three test deps are test-only (no release-APK or production-graph impact; the merged manifest stays byte-unchanged, no new permissions). The `src/testDebug` pattern is the precedent for the first real Roborazzi Compose test (M-003 / M-004). Status Proposed.
+`viewModelScope` + `WhileSubscribed` is the canonical Compose state bridge (file 04). The `src/testDebug` placement is a deviation from the packet's stated `src/test` path for AC-005, surfaced here and in the close handoff; AC-005 still passes (debug variant) and asserts counter text/semantics (no pixel baseline). The three test deps are test-only (no release-APK or production-graph impact; the merged manifest stays byte-unchanged, no new permissions). The `src/testDebug` pattern is the precedent for the first real Roborazzi Compose test (M-003 / M-004). Status Accepted.
 
 ---
 
 ### ADR-105: `:adherence-tracking` first read/observe path — `observeConfirmedDoseCount(): Flow<Int>` port + observable `@Query` (typed converter-aware param) + thin `ObserveConfirmedDoseCountUseCase`; read errors surface to the collector; no new read-path failure test
 
 - Date: 2026-06-10
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; QA; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-011 (M-002); `_context/04 § ConfirmationRepository / § layer table`; `_context/06 § F-013` (read-path shape precedent); `_context/05 § Test Portfolio` (Integration row); QA note (2) (handoff 2026-06-10 QA + Security); ADR-099 (write path)
 
@@ -79,14 +163,14 @@ Add `ConfirmationRepository.observeConfirmedDoseCount(): Flow<Int>` (read surfac
 
 #### Consequences
 
-`:adherence-tracking` gains its first read port method and first query use case; the read I/O stays in `:infrastructure` behind the Application port (Konsist `NoUpwardLayerDependencyRule` green). The thin use case is covered by AC-002, keeping the ADR-103 combined ≥ 90 % gate green; the DAO/repository read members are `infrastructure.*` (no `%` threshold; exercised by AC-003). The read-path-error-to-collector behavior is intentionally untested in T-011 (recorded per QA note (2)); BR-008 and the full F-013 read path remain M-005 / M-006. Status Proposed.
+`:adherence-tracking` gains its first read port method and first query use case; the read I/O stays in `:infrastructure` behind the Application port (Konsist `NoUpwardLayerDependencyRule` green). The thin use case is covered by AC-002, keeping the ADR-103 combined ≥ 90 % gate green; the DAO/repository read members are `infrastructure.*` (no `%` threshold; exercised by AC-003). The read-path-error-to-collector behavior is intentionally untested in T-011 (recorded per QA note (2)); BR-008 and the full F-013 read path remain M-005 / M-006. Status Accepted.
 
 ---
 
 ### ADR-104: T-011 observe seam — the on-screen counter observes the persisted `Confirmation` via a Room `Flow`, not the in-memory `DoseConfirmed` event; supersedes ADR-100's "first `DoseConfirmed` consumer" expectation
 
 - Date: 2026-06-10
-- Status: Proposed
+- Status: Accepted
 - Owners: Developer; Human gatekeeper (Isidro Rodriguez)
 - Related milestone or task: T-011 (M-002); `_context/08 § Architect Decision Required`; `_context/07 § Milestone Register M-002` Done-When item (5) + milestone goal ("Room → StateFlow → Compose re-render"); `_context/04 § DomainEventPublisher`; **refines/supersedes the "first `DoseConfirmed` consumer" clause of ADR-100** (ADR-100 otherwise stands `Accepted`)
 
@@ -100,7 +184,7 @@ Adopt **(C)**: the counter observes the persisted `Confirmation` via a `Confirma
 
 #### Consequences
 
-The observe seam is the milestone-faithful "Room → StateFlow" surface and the precedent for the real M-005 / M-006 read path (`_context/06 § F-013` `observeTodayDoses` is the same `Flow` → `StateFlow` → Compose shape). `DoseConfirmed` remains an emitted-but-unconsumed-in-MVP event (no behavior change to existing emitters). The `:app::presentation → :adherence-tracking::application` dependency is legal (`:app` may depend on every feature module; `NoCrossFeatureDomainImportRule` unaffected). Status Proposed.
+The observe seam is the milestone-faithful "Room → StateFlow" surface and the precedent for the real M-005 / M-006 read path (`_context/06 § F-013` `observeTodayDoses` is the same `Flow` → `StateFlow` → Compose shape). `DoseConfirmed` remains an emitted-but-unconsumed-in-MVP event (no behavior change to existing emitters). The `:app::presentation → :adherence-tracking::application` dependency is legal (`:app` may depend on every feature module; `NoCrossFeatureDomainImportRule` unaffected). Status Accepted.
 
 ---
 
@@ -121,7 +205,7 @@ The packet specifies two `:adherence-tracking` Kover thresholds — Domain ≥ 9
 
 #### Consequences
 
-`koverVerify` passes with `:adherence-tracking` measured ~100 % on the gated scope (verified). The single-gate collapse is a faithful, surfaced reading of the two-threshold spec under ADR-086, not a silent descope. The test-only cross-feature dependency is intentional and required by AC-004's end-to-end intent. The receiver's static `@VisibleForTesting` seams are reset in the test's `@After` to avoid cross-test leakage. Status Proposed.
+`koverVerify` passes with `:adherence-tracking` measured ~100 % on the gated scope (verified). The single-gate collapse is a faithful, surfaced reading of the two-threshold spec under ADR-086, not a silent descope. The test-only cross-feature dependency is intentional and required by AC-004's end-to-end intent. The receiver's static `@VisibleForTesting` seams are reset in the test's `@After` to avoid cross-test leakage. Status Accepted.
 
 ---
 
@@ -142,7 +226,7 @@ T-010 realizes F-006 steps 1–2, the `Confirmation`-write half of step 4, step 
 
 #### Consequences
 
-The demo writes a `Confirmation` and dismisses the notification but does not flip any `Dose.status` (there is none). The full Dose-aggregate same-transaction co-update, the defensive cancel, and `UnknownDose` are routed to M-004 / M-005 when real Doses exist. The plain-text-Room decision is unchanged from ADR-043; the file-13 § 9 (ii) revisit triggers remain the standard escalation path. Status Proposed.
+The demo writes a `Confirmation` and dismisses the notification but does not flip any `Dose.status` (there is none). The full Dose-aggregate same-transaction co-update, the defensive cancel, and `UnknownDose` are routed to M-004 / M-005 when real Doses exist. The plain-text-Room decision is unchanged from ADR-043; the file-13 § 9 (ii) revisit triggers remain the standard escalation path. Status Accepted.
 
 ---
 
@@ -184,7 +268,7 @@ Add `data class DoseConfirmed(doseId, confirmationId, status, confirmedAt, sourc
 
 #### Consequences
 
-The event hierarchy grows additively (no behavior change to existing subscribers). The redaction is enforced by ADR-101's rule. The first consumer lands in T-011. Status Proposed.
+The event hierarchy grows additively (no behavior change to existing subscribers). The redaction is enforced by ADR-101's rule. The first consumer lands in T-011. Status Accepted.
 
 ---
 
@@ -205,7 +289,7 @@ T-010 stands up the first `:adherence-tracking` production code: the `Confirmati
 
 #### Consequences
 
-The `confirmation` table (PK `confirmationId`, unique index on `doseId`) is the project's first persisted aggregate; its committed schema is ADR-098's `1.json`. Idempotency is enforced at the storage layer, not in the use case. The base-`RoomDatabase` injection keeps `:adherence-tracking` independent of `:app`. Status Proposed.
+The `confirmation` table (PK `confirmationId`, unique index on `doseId`) is the project's first persisted aggregate; its committed schema is ADR-098's `1.json`. Idempotency is enforced at the storage layer, not in the use case. The base-`RoomDatabase` injection keeps `:adherence-tracking` independent of `:app`. Status Accepted.
 
 ---
 
@@ -226,7 +310,7 @@ T-010 stands up the project's first Room database. File 04 makes the single-`Nem
 
 #### Consequences
 
-The empirically-confirmed minimal KSP placement (Room compiler in `:app` + per-test-source `kspTest`, none in feature `main`) refines ADR-083 / ADR-091 for the Room case. Future entities (`Medication` / `DoseSchedule` / `Dose`) are added with a `Migration(from, to)` + a new committed schema JSON. The committed `1.json` declares the `confirmation` table with the unique `doseId` index. Status Proposed.
+The empirically-confirmed minimal KSP placement (Room compiler in `:app` + per-test-source `kspTest`, none in feature `main`) refines ADR-083 / ADR-091 for the Room case. Future entities (`Medication` / `DoseSchedule` / `Dose`) are added with a `Migration(from, to)` + a new committed schema JSON. The committed `1.json` declares the `confirmation` table with the unique `doseId` index. Status Accepted.
 
 ---
 
@@ -268,7 +352,7 @@ Author all notification strings (channel display name + description, on-time tit
 
 #### Consequences
 
-Honors file 11's "no inline literals" intent and the module graph simultaneously; deviates from the packet's literal file path. Future `:notifications` copy (BR-010 variants, ES) lands in this module's resources. Coverage gate measured at 100% line in the gated scope at T-009 close. Surfaced for gatekeeper ratification. Status Proposed.
+Honors file 11's "no inline literals" intent and the module graph simultaneously; deviates from the packet's literal file path. Future `:notifications` copy (BR-010 variants, ES) lands in this module's resources. Coverage gate measured at 100% line in the gated scope at T-009 close. Surfaced for gatekeeper ratification. Status Accepted.
 
 ---
 
@@ -289,7 +373,7 @@ Implement `onReceive` as a synchronous stub: validate the action string at the e
 
 #### Consequences
 
-Tapping "Take"/"Skip" logs and dismisses but writes nothing in T-009. T-010 replaces the stub with the typed parse → use-case dispatch (with `Result.Err.UnexpectedNotificationPayload` / `UnknownDose`) and the `goAsync()` scope. Status Proposed.
+Tapping "Take"/"Skip" logs and dismisses but writes nothing in T-009. T-010 replaces the stub with the typed parse → use-case dispatch (with `Result.Err.UnexpectedNotificationPayload` / `UnknownDose`) and the `goAsync()` scope. Status Accepted.
 
 ---
 
@@ -310,7 +394,7 @@ The on-time Reminder must expose the two inline actions the product is built aro
 
 #### Consequences
 
-Three `FLAG_IMMUTABLE` PendingIntents per notification, all asserted by the Robolectric integration test (immutable, broadcast, action, extras, target receiver). Lock-screen residual (THR-008) is the accepted product affordance, not a regression. Status Proposed.
+Three `FLAG_IMMUTABLE` PendingIntents per notification, all asserted by the Robolectric integration test (immutable, broadcast, action, extras, target receiver). Lock-screen residual (THR-008) is the accepted product affordance, not a regression. Status Accepted.
 
 ---
 
@@ -331,7 +415,7 @@ Three `FLAG_IMMUTABLE` PendingIntents per notification, all asserted by the Robo
 
 #### Consequences
 
-Only `reminder_on_time` is created in T-009 (other BR-010 channels are M-004). The channel ID is the durable contract; importance is a creation-time default the Patient may override. Status Proposed.
+Only `reminder_on_time` is created in T-009 (other BR-010 channels are M-004). The channel ID is the durable contract; importance is a creation-time default the Patient may override. Status Accepted.
 
 ---
 
@@ -352,7 +436,7 @@ Avoid `@Inject` field injection entirely for now. `NemoPillApplication` retrieve
 
 #### Consequences
 
-No `@Inject` fields anywhere until the Hilt bump lands; constructor injection and provision entry points are the sanctioned patterns. The same `EntryPointAccessors` pattern is used for the `ReminderAlarmReceiver` (ADR-091). Re-evaluate at the Hilt bump. Status Proposed.
+No `@Inject` fields anywhere until the Hilt bump lands; constructor injection and provision entry points are the sanctioned patterns. The same `EntryPointAccessors` pattern is used for the `ReminderAlarmReceiver` (ADR-091). Re-evaluate at the Hilt bump. Status Accepted.
 
 ---
 
@@ -373,7 +457,7 @@ A manifest `BroadcastReceiver` is OS-instantiated and cannot be constructor-inje
 
 #### Consequences
 
-`:scheduling` is now a Hilt-processing module. The same `EntryPointAccessors` pattern serves `NemoPillApplication` (ADR-092). The Kover generated-code exclusion is a general improvement (generated factories never belong in coverage) and may be applied to other modules if/when they gain KSP. Status Proposed.
+`:scheduling` is now a Hilt-processing module. The same `EntryPointAccessors` pattern serves `NemoPillApplication` (ADR-092). The Kover generated-code exclusion is a general improvement (generated factories never belong in coverage) and may be applied to other modules if/when they gain KSP. Status Accepted.
 
 ---
 
@@ -394,7 +478,7 @@ T-009 turns the T-008 no-op alarm receiver into the cross-Bounded-Context seam. 
 
 #### Consequences
 
-The walking-skeleton demo always fires `ON_TIME`. The real precondition-checked `FireReminderUseCase` (and the `LATE` variant) are M-004. The in-process bus's no-durability trade-off (file 04 § Architecture Risks) is accepted for the demo; if the cold-start delivery proves flaky on hardware, the Room-as-outbox path is the routed durable fix. Status Proposed.
+The walking-skeleton demo always fires `ON_TIME`. The real precondition-checked `FireReminderUseCase` (and the `LATE` variant) are M-004. The in-process bus's no-durability trade-off (file 04 § Architecture Risks) is accepted for the demo; if the cold-start delivery proves flaky on hardware, the Room-as-outbox path is the routed durable fix. Status Accepted.
 
 ---
 
@@ -415,7 +499,7 @@ Add `event/DomainEvent.kt` (sealed marker), `event/ReminderFired.kt` (`data clas
 
 #### Consequences
 
-The `DomainEvent` hierarchy is seeded with `ReminderFired` only; the other file-02 members are additive-only with their owning features. No event durability across process death (accepted trade-off, file 04). `:core` Kover gate measured 100% line on `io.nemopill.core.*` (incl. `event.*`) at T-009 close. Status Proposed.
+The `DomainEvent` hierarchy is seeded with `ReminderFired` only; the other file-02 members are additive-only with their owning features. No event durability across process death (accepted trade-off, file 04). `:core` Kover gate measured 100% line on `io.nemopill.core.*` (incl. `event.*`) at T-009 close. Status Accepted.
 
 ---
 
@@ -457,7 +541,7 @@ ADR-081 deferred ADR-049's two Konsist rules to the tasks first introducing thei
 
 #### Consequences
 
-Rule (i) is live and CI-enforced (arch-conformance stage). Rule (ii) remains unwired with a named target task. Surfaced (not silently resolved) for the rule-(ii)-wiring task: ADR-049 rule (ii)'s "(:domain, :core)" scope would also match `:core`'s `Result.Ok` / `Result.Err.Unexpected` `data class`es, which carry **no** Patient data. That task must decide whether to (a) require a redacted `toString()` on those non-PII shared-kernel types too, or (b) scope rule (ii) to Patient-data-bearing feature-module Domain entities and explicitly exempt `:core`'s `Result` family. Status Proposed.
+Rule (i) is live and CI-enforced (arch-conformance stage). Rule (ii) remains unwired with a named target task. Surfaced (not silently resolved) for the rule-(ii)-wiring task: ADR-049 rule (ii)'s "(:domain, :core)" scope would also match `:core`'s `Result.Ok` / `Result.Err.Unexpected` `data class`es, which carry **no** Patient data. That task must decide whether to (a) require a redacted `toString()` on those non-PII shared-kernel types too, or (b) scope rule (ii) to Patient-data-bearing feature-module Domain entities and explicitly exempt `:core`'s `Result` family. Status Accepted.
 
 ---
 
@@ -478,7 +562,7 @@ Configure each gated module with a report-level filter that scopes both the repo
 
 #### Consequences
 
-Gates are real, non-vacuous, and met with margin (measured at T-008: `:core` 5/5 lines = 100 %; `:scheduling::application` 7/7 lines = 100 %). Because the filter is report-wide, `:scheduling`'s coverage *report* shows only the `application` package — `infrastructure.*` / `presentation.*` are excluded from the report entirely, not merely un-gated (they carry no `%` target per `_context/05` and are exercised by the Robolectric integration test). If future work needs to *report* infra/presentation coverage without *gating* it, migrate to Kover report variants. This resolves the ADR-078 deferral; ADR-078's per-module threshold intent stands, only its DSL form is superseded for 0.8.3. Status Proposed.
+Gates are real, non-vacuous, and met with margin (measured at T-008: `:core` 5/5 lines = 100 %; `:scheduling::application` 7/7 lines = 100 %). Because the filter is report-wide, `:scheduling`'s coverage *report* shows only the `application` package — `infrastructure.*` / `presentation.*` are excluded from the report entirely, not merely un-gated (they carry no `%` target per `_context/05` and are exercised by the Robolectric integration test). If future work needs to *report* infra/presentation coverage without *gating* it, migrate to Kover report variants. This resolves the ADR-078 deferral; ADR-078's per-module threshold intent stands, only its DSL form is superseded for 0.8.3. Status Accepted.
 
 ---
 
@@ -499,7 +583,7 @@ Move the receiver to `io.nemopill.scheduling.infrastructure.ReminderAlarmReceive
 
 #### Consequences
 
-The adapter references the receiver within its own module; no cross-module dependency violation. The receiver declaration stays in `:app`'s manifest (where `<application>` lives), addressed by FQCN; the merged manifest resolves the class through `:app`'s dependency on `:scheduling`. No new permissions; the receiver remains non-exported. Status Proposed.
+The adapter references the receiver within its own module; no cross-module dependency violation. The receiver declaration stays in `:app`'s manifest (where `<application>` lives), addressed by FQCN; the merged manifest resolves the class through `:app`'s dependency on `:scheduling`. No new permissions; the receiver remains non-exported. Status Accepted.
 
 ---
 
@@ -520,7 +604,7 @@ Use `AlarmManager.setAlarmClock(AlarmClockInfo(triggerAtMillis, showIntent), ope
 
 #### Consequences
 
-Idempotency is the adapter's responsibility via the stable request code (BR-004). The `doseId` rides as an Intent extra — an aggregate ID only, ADR-031-compliant (no drug name / schedule / Confirmation history). Full multi-Dose cancellation, per-Dose request codes, and the boot re-arm path land with later M-002 slices. Status Proposed.
+Idempotency is the adapter's responsibility via the stable request code (BR-004). The `doseId` rides as an Intent extra — an aggregate ID only, ADR-031-compliant (no drug name / schedule / Confirmation history). Full multi-Dose cancellation, per-Dose request codes, and the boot re-arm path land with later M-002 slices. Status Accepted.
 
 ---
 
@@ -541,7 +625,7 @@ Add `ksp = "2.1.0-1.0.29"` (matched exactly to the catalog's Kotlin 2.1.0) and t
 
 #### Consequences
 
-`:app:kspDebugKotlin` + `hiltAggregateDeps*` + `hiltJavaCompile*` run cleanly across debug/release/test variants; `:app:assembleDebug` succeeds with no missing-binding errors. KSP1 (default for the `2.1.0-1.0.x` line) is compatible with Hilt 2.51.1. If a feature module later needs its own `@Module` / entry point / `@HiltViewModel`, Hilt + KSP is added to that module at that time. Status Proposed.
+`:app:kspDebugKotlin` + `hiltAggregateDeps*` + `hiltJavaCompile*` run cleanly across debug/release/test variants; `:app:assembleDebug` succeeds with no missing-binding errors. KSP1 (default for the `2.1.0-1.0.x` line) is compatible with Hilt 2.51.1. If a feature module later needs its own `@Module` / entry point / `@HiltViewModel`, Hilt + KSP is added to that module at that time. Status Accepted.
 
 ---
 
@@ -562,7 +646,7 @@ Add `coroutines = "1.10.1"` (pairs with Kotlin 2.1.0) with libraries `kotlinx-co
 
 #### Consequences
 
-Per `_context/05 § Dependency and supply chain`, this `libs.versions.toml` change is a Security-applicability / dependency-review event, recorded here with the one-line justification above. Verified against the merged manifest: none of these dependencies introduces a network or any new permission. Status Proposed.
+Per `_context/05 § Dependency and supply chain`, this `libs.versions.toml` change is a Security-applicability / dependency-review event, recorded here with the one-line justification above. Verified against the merged manifest: none of these dependencies introduces a network or any new permission. Status Accepted.
 
 ---
 

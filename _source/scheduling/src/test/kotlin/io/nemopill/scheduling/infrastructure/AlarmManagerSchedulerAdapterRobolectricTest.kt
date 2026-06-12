@@ -6,6 +6,7 @@ import android.content.Context
 import com.google.common.truth.Truth.assertThat
 import io.nemopill.scheduling.DEMO_DOSE_ID
 import io.nemopill.scheduling.FakeClock
+import io.nemopill.scheduling.application.FakePendingReminderStore
 import io.nemopill.scheduling.application.ScheduleDemoReminderUseCase
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -48,7 +49,7 @@ class AlarmManagerSchedulerAdapterRobolectricTest {
     @Test
     fun `use case schedules exactly one alarm at now plus ten minutes`() =
         runTest {
-            val useCase = ScheduleDemoReminderUseCase(FakeClock(now), adapter)
+            val useCase = ScheduleDemoReminderUseCase(FakeClock(now), adapter, FakePendingReminderStore())
 
             useCase()
 
@@ -73,7 +74,7 @@ class AlarmManagerSchedulerAdapterRobolectricTest {
     @Test
     fun `re-scheduling the same dose is idempotent - a single alarm`() =
         runTest {
-            val useCase = ScheduleDemoReminderUseCase(FakeClock(now), adapter)
+            val useCase = ScheduleDemoReminderUseCase(FakeClock(now), adapter, FakePendingReminderStore())
 
             useCase()
             useCase()
